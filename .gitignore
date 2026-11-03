@@ -1,0 +1,4 @@
+build/obj/
+build/iso-root/
+build/fortify.elf
+build/fortify.iso
