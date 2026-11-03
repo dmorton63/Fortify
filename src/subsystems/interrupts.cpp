@@ -53,7 +53,6 @@ static volatile uint64_t g_timer_ticks = 0;
 static uint64_t g_worker_irq0_trace_count = 0;
 static uint64_t g_irq0_return_probe_count = 0;
 static uint64_t g_worker_irq0_entry_count = 0;
-static bool g_worker_irq0_mask_probe_armed = true;
 
 constexpr uint8_t kMasterPicCmd = 0x20;
 constexpr uint8_t kMasterPicData = 0x21;
@@ -63,7 +62,6 @@ constexpr uint8_t kPicEoi = 0x20;
 constexpr uint8_t kIrqBase = 32;
 constexpr bool kForensicsMode = false;
 constexpr bool kEnablePitSlowTickProbe = false;
-constexpr bool kEnableMaskIrq0AfterFirstWorkerEoiProbe = false;
 constexpr bool kEnableIrq0DispatchReturnMarker = kForensicsMode;
 constexpr bool kEnableIrq0ReturnTripleProbe = kForensicsMode;
 constexpr bool kEnableIrq0HandoffCompareProbe = kForensicsMode;
@@ -315,14 +313,6 @@ void pic_send_eoi(uint8_t vector) {
     outb(kMasterPicCmd, kPicEoi);
 }
 
-void pic_set_irq0_masked(bool masked) {
-    const uint8_t master_mask = inb(kMasterPicData);
-    const uint8_t next_mask = masked
-                                  ? static_cast<uint8_t>(master_mask | 0x01U)
-                                  : static_cast<uint8_t>(master_mask & ~0x01U);
-    outb(kMasterPicData, next_mask);
-}
-
 void pic_remap_and_configure(void) {
     const uint8_t master_mask = inb(kMasterPicData);
     (void)inb(kSlavePicData);
@@ -472,13 +462,6 @@ extern "C" interrupt_frame *interrupts_dispatch(interrupt_frame *ctx, uint64_t e
         if (vector == kIrqBase) {
             const uint64_t after_idx = scheduler_current_thread_index();
             diag_mark_phase(kDiagPhaseIrq0PostEoi, after_idx);
-            if (kEnableMaskIrq0AfterFirstWorkerEoiProbe &&
-                g_worker_irq0_mask_probe_armed &&
-                irq0_touched_worker) {
-                g_worker_irq0_mask_probe_armed = false;
-                pic_set_irq0_masked(true);
-                serial_write("[TRACE] irq0-mask-probe: masked IRQ0 on master PIC after first worker EOI.\n");
-            }
             if (kForensicsMode && after_idx == 1) {
                 const uint64_t seq = g_worker_irq0_trace_count++;
                 if (should_trace_worker_irq0(seq)) {
