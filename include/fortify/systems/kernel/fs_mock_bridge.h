@@ -1,0 +1,6 @@
+#ifndef FORTIFY_KERNEL_FS_MOCK_BRIDGE_H
+#define FORTIFY_KERNEL_FS_MOCK_BRIDGE_H
+
+void kernel_configure_filesystem_sector_reader_bridge(void);
+
+#endif
