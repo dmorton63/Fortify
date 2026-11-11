@@ -1789,6 +1789,36 @@ void scheduler_stop_ap_pinned_demo_tasks(void) {
     }
 }
 
+bool scheduler_force_ap_pinned_task_migration_step(void) {
+    if (!g_scheduler.ready || !g_scheduler.running || g_scheduler.cpu_count <= 2) {
+        return false;
+    }
+
+    const uint64_t ap_cpu_count = g_scheduler.cpu_count - 1;
+    bool moved_any = false;
+    for (uint64_t task_index = 0; task_index < kMaxApPinnedTasks; task_index++) {
+        if (!g_ap_pinned_tasks[task_index].active || ap_cpu_count == 0) {
+            continue;
+        }
+        const uint64_t current_cpu = g_ap_pinned_tasks[task_index].cpu_index;
+        if (current_cpu == 0 || current_cpu >= g_scheduler.cpu_count) {
+            continue;
+        }
+        uint64_t next_cpu = (current_cpu - 1 + 1) % ap_cpu_count;
+        next_cpu += 1;
+        if (next_cpu == current_cpu) {
+            continue;
+        }
+        g_ap_pinned_tasks[task_index].cpu_index = next_cpu;
+        __atomic_fetch_add(&g_ap_pinned_task_migration_total, 1, __ATOMIC_RELAXED);
+        moved_any = true;
+    }
+    if (moved_any) {
+        __atomic_store_n(&g_ap_pinned_task_last_migration_tick, g_scheduler.total_ticks, __ATOMIC_RELAXED);
+    }
+    return moved_any;
+}
+
 bool scheduler_dispatch_ap_pinned_tasks(void) {
     if (!g_scheduler.ready || !g_scheduler.running) {
         return false;
@@ -1802,24 +1832,7 @@ bool scheduler_dispatch_ap_pinned_tasks(void) {
             __atomic_load_n(&g_ap_pinned_task_last_migration_tick, __ATOMIC_RELAXED);
         if (now_ticks >= last_migration_tick &&
             (now_ticks - last_migration_tick) >= kApPinnedTaskMigrationIntervalTicks) {
-            const uint64_t ap_cpu_count = g_scheduler.cpu_count - 1;
-            for (uint64_t task_index = 0; task_index < kMaxApPinnedTasks; task_index++) {
-                if (!g_ap_pinned_tasks[task_index].active || ap_cpu_count == 0) {
-                    continue;
-                }
-                const uint64_t current_cpu = g_ap_pinned_tasks[task_index].cpu_index;
-                if (current_cpu == 0 || current_cpu >= g_scheduler.cpu_count) {
-                    continue;
-                }
-                uint64_t next_cpu = (current_cpu - 1 + 1) % ap_cpu_count;
-                next_cpu += 1;
-                if (next_cpu == current_cpu) {
-                    continue;
-                }
-                g_ap_pinned_tasks[task_index].cpu_index = next_cpu;
-                __atomic_fetch_add(&g_ap_pinned_task_migration_total, 1, __ATOMIC_RELAXED);
-            }
-            __atomic_store_n(&g_ap_pinned_task_last_migration_tick, now_ticks, __ATOMIC_RELAXED);
+            (void)scheduler_force_ap_pinned_task_migration_step();
         }
     }
 
@@ -1877,6 +1890,21 @@ uint64_t scheduler_ap_pinned_task_seen_cpu_mask(void) {
             continue;
         }
         mask |= g_ap_pinned_tasks[task_index].seen_cpu_mask;
+    }
+    return mask;
+}
+
+uint64_t scheduler_ap_pinned_task_assigned_cpu_mask(void) {
+    uint64_t mask = 0;
+    for (uint64_t task_index = 0; task_index < kMaxApPinnedTasks; task_index++) {
+        if (!g_ap_pinned_tasks[task_index].active) {
+            continue;
+        }
+        const uint64_t cpu_index = g_ap_pinned_tasks[task_index].cpu_index;
+        if (cpu_index >= g_scheduler.cpu_count || cpu_index >= 64) {
+            continue;
+        }
+        mask |= (1ULL << cpu_index);
     }
     return mask;
 }

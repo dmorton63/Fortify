@@ -11,5 +11,7 @@ uint64_t kernel_smp_quiet_health_snapshot_ticks(void);
 void kernel_set_runtime_message_backlog_guardrail(uint64_t warn_depth, uint64_t transition_ticks);
 uint64_t kernel_runtime_message_backlog_warn_depth(void);
 uint64_t kernel_runtime_message_backlog_transition_ticks(void);
+bool kernel_ap_migration_smoke_active(void);
+bool kernel_start_ap_migration_smoke(uint64_t timeout_ticks);
 
 #endif

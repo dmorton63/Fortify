@@ -24,6 +24,8 @@ void scheduler_set_ap_pinned_task_migration_enabled(bool enabled);
 bool scheduler_ap_pinned_task_migration_enabled(void);
 uint64_t scheduler_ap_pinned_task_migration_total(void);
 uint64_t scheduler_ap_pinned_task_seen_cpu_mask(void);
+uint64_t scheduler_ap_pinned_task_assigned_cpu_mask(void);
+bool scheduler_force_ap_pinned_task_migration_step(void);
 uint64_t scheduler_ap_to_ap_switch_total(void);
 uint64_t scheduler_ap_to_ap_switch_for_cpu(uint64_t cpu_index);
 uint64_t scheduler_bsp_to_ap_switch_total(void);

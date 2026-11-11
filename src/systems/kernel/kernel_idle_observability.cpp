@@ -1,10 +1,13 @@
 #include "fortify/systems/kernel/kernel_idle_observability.h"
 
 #include "fortify/systems/kernel/kernel_idle_ap_service.h"
+#include "fortify/systems/kernel/kernel_string.h"
 #include "fortify/systems/kernel/runtime_message_router.h"
 #include "fortify/systems/kernel/smp_diagnostics.h"
+#include "fortify/systems/console/console.h"
 #include "fortify/systems/logging/log.h"
 #include "fortify/systems/scheduler/scheduler.h"
+#include "fortify/systems/serial/serial.h"
 #include "fortify/systems/subsystems/subsystems.h"
 
 extern "C" volatile uint64_t g_ap_trigger_profile;
@@ -75,6 +78,12 @@ uint64_t runtime_msg_backlog_warn_depth = kRuntimeMsgBacklogWarnDepthDefault;
 uint64_t runtime_msg_backlog_transition_ticks = kRuntimeMsgBacklogTransitionTicksDefault;
 uint64_t smp_log_profile = kSmpLogProfileDefault;
 uint64_t smp_quiet_health_snapshot_ticks = kSmpQuietHealthSnapshotTicksDefault;
+bool ap_migration_smoke_active = false;
+bool ap_migration_smoke_started_tasks = false;
+bool ap_migration_smoke_restore_migration_enabled = false;
+uint64_t ap_migration_smoke_timeout_ticks = 0;
+uint64_t ap_migration_smoke_start_tick = 0;
+uint64_t ap_migration_smoke_baseline_migrations = 0;
 
 void poll_runtime_message_backlog_guardrail(const char *warn_label,
                                             const char *recover_label,
@@ -109,6 +118,111 @@ void poll_runtime_message_backlog_guardrail(const char *warn_label,
     } else {
         *recover_since_tick = 0;
     }
+}
+
+void log_ap_migration_smoke_result(bool pass,
+                                   uint64_t active,
+                                   uint64_t migration_delta,
+                                   uint64_t seen_mask,
+                                   uint64_t expected_mask,
+                                   uint64_t elapsed_ticks,
+                                   uint64_t timeout_ticks) {
+    char active_hex[19];
+    char moves_hex[19];
+    char mask_hex[19];
+    char expected_hex[19];
+    char elapsed_hex[19];
+    char timeout_hex[19];
+    kernel_format_hex64(active_hex, active);
+    kernel_format_hex64(moves_hex, migration_delta);
+    kernel_format_hex64(mask_hex, seen_mask);
+    kernel_format_hex64(expected_hex, expected_mask);
+    kernel_format_hex64(elapsed_hex, elapsed_ticks);
+    kernel_format_hex64(timeout_hex, timeout_ticks);
+
+    serial_write(pass ? "[INFO] smp: serial cmd ap-migration-smoke pass active="
+                      : "[WARN] smp: serial cmd ap-migration-smoke fail active=");
+    serial_write(active_hex);
+    serial_write(" moves=");
+    serial_write(moves_hex);
+    serial_write(" mask=");
+    serial_write(mask_hex);
+    serial_write(" expected=");
+    serial_write(expected_hex);
+    serial_write(" elapsed=");
+    serial_write(elapsed_hex);
+    serial_write(" timeout=");
+    serial_write(timeout_hex);
+    serial_write(" tick-stall=0\n");
+
+    console_write(pass ? "[INFO] smp: serial cmd ap-migration-smoke pass active="
+                       : "[WARN] smp: serial cmd ap-migration-smoke fail active=");
+    console_write(active_hex);
+    console_write(" moves=");
+    console_write(moves_hex);
+    console_write(" mask=");
+    console_write(mask_hex);
+    console_write(" expected=");
+    console_write(expected_hex);
+    console_write(" elapsed=");
+    console_write(elapsed_hex);
+    console_write(" timeout=");
+    console_write(timeout_hex);
+    console_write(" tick-stall=0\n");
+}
+
+void poll_ap_migration_smoke(uint64_t ticks) {
+    if (!ap_migration_smoke_active) {
+        return;
+    }
+
+    const bool ap_work_requested = scheduler_dispatch_ap_pinned_tasks();
+    const bool migration_step = scheduler_force_ap_pinned_task_migration_step();
+    if (ap_work_requested) {
+        (void)smp_kick_all_aps();
+    }
+    if (migration_step) {
+        (void)smp_kick_all_aps();
+    }
+
+    const uint64_t active = scheduler_ap_pinned_task_active_count();
+    const uint64_t migration_delta =
+        scheduler_ap_pinned_task_migration_total() - ap_migration_smoke_baseline_migrations;
+    const uint64_t online = smp_online_cpu_count();
+    uint64_t ap_expected = online > 0 ? (online - 1) : 0;
+    if (ap_expected > 63) {
+        ap_expected = 63;
+    }
+    uint64_t expected_mask = 0;
+    for (uint64_t cpu = 1; cpu <= ap_expected; cpu++) {
+        expected_mask |= (1ULL << cpu);
+    }
+    const uint64_t assigned_mask = scheduler_ap_pinned_task_assigned_cpu_mask();
+    const bool mask_covered =
+        (expected_mask == 0) || ((assigned_mask & expected_mask) == expected_mask);
+    const bool migrations_observed =
+        (ap_expected <= 1) || (migration_delta != 0);
+    const bool pass = (active != 0) && mask_covered && migrations_observed;
+    const uint64_t elapsed_ticks = ticks - ap_migration_smoke_start_tick;
+    const bool timed_out = elapsed_ticks > ap_migration_smoke_timeout_ticks;
+    if (!pass && !timed_out) {
+        return;
+    }
+
+    if (ap_migration_smoke_started_tasks) {
+        scheduler_stop_ap_pinned_demo_tasks();
+    }
+    scheduler_set_ap_pinned_task_migration_enabled(ap_migration_smoke_restore_migration_enabled);
+    ap_migration_smoke_active = false;
+    ap_migration_smoke_started_tasks = false;
+
+    log_ap_migration_smoke_result(pass,
+                                  active,
+                                  migration_delta,
+                                  assigned_mask,
+                                  expected_mask,
+                                  elapsed_ticks,
+                                  ap_migration_smoke_timeout_ticks);
 }
 } // namespace
 
@@ -154,6 +268,35 @@ uint64_t kernel_runtime_message_backlog_warn_depth(void) {
 
 uint64_t kernel_runtime_message_backlog_transition_ticks(void) {
     return runtime_msg_backlog_transition_ticks;
+}
+
+bool kernel_ap_migration_smoke_active(void) {
+    return ap_migration_smoke_active;
+}
+
+bool kernel_start_ap_migration_smoke(uint64_t timeout_ticks) {
+    if (ap_migration_smoke_active) {
+        return false;
+    }
+    const bool migration_enabled_before = scheduler_ap_pinned_task_migration_enabled();
+    const uint64_t active_before = scheduler_ap_pinned_task_active_count();
+    bool started_for_smoke = false;
+    if (active_before == 0) {
+        started_for_smoke = scheduler_start_ap_pinned_demo_tasks();
+    }
+    const uint64_t active_after_start = scheduler_ap_pinned_task_active_count();
+    if (active_after_start == 0) {
+        return false;
+    }
+
+    scheduler_set_ap_pinned_task_migration_enabled(true);
+    ap_migration_smoke_active = true;
+    ap_migration_smoke_started_tasks = started_for_smoke;
+    ap_migration_smoke_restore_migration_enabled = migration_enabled_before;
+    ap_migration_smoke_timeout_ticks = timeout_ticks;
+    ap_migration_smoke_start_tick = timer_ticks();
+    ap_migration_smoke_baseline_migrations = scheduler_ap_pinned_task_migration_total();
+    return true;
 }
 
 void kernel_idle_poll_smp_observability(uint64_t ticks) {
@@ -241,6 +384,7 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
         &runtime_msg_command_backlog_warn_since_tick,
         &runtime_msg_command_backlog_recover_since_tick,
         ticks);
+    poll_ap_migration_smoke(ticks);
     const bool quiet_profile = smp_log_profile == kSmpLogProfileQuiet;
     const bool log_detailed_counters =
         !quiet_profile &&
@@ -570,7 +714,7 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
             (ap_expected <= 1) || (ap_pinned_migrations_total != 0);
         migration_pass = mask_covered && migrations_observed;
     }
-    const bool migration_pass_for_logs = migration_pass || last_migration_pass;
+    const bool migration_pass_for_logs = migration_pass;
     const uint64_t migration_expected_mask_for_logs =
         migration_gate_active ? expected_ap_cpu_mask : 0;
     const bool self_test_pass_for_logs =

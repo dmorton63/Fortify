@@ -249,6 +249,7 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `ap-task-stop` (disable AP-pinned runnable demo tasks)
 - `ap-task-migrate` (show migration toggle state)
 - `ap-task-migrate 1` / `ap-task-migrate 0` (enable/disable AP-pinned task migration)
+- `ap-migration-smoke [timeout-ticks]` (run deterministic AP-pinned migration validation and emit a one-line pass/fail summary with active/moves/mask/expected/elapsed; default timeout `6000` ticks)
 - `smp-log` / `smp-log default|quiet` (show/set periodic SMP observability verbosity; `quiet` suppresses heartbeat and per-CPU chatter while preserving command and self-test transition logs)
 - `smp-log-health` / `smp-log-health <ticks>` (show/set quiet-mode health snapshot interval in ticks; `0` disables quiet-mode health snapshots, default `3000`)
 - `video-demo` / `video-demo 1|0` (show/enable/disable animated software 3D panel; when disabled, compositor input/command surfaces remain active and continue updating)
@@ -394,6 +395,13 @@ Webcam vertical-slice quick checks:
 - `webcam-stats`
   - expected immediate log: one compact webcam line with queue depth/high-water, frame/drop, processed(total/irq/inject), and batch/job counters
   - expected behavior after drain: queue depth returns to `0`, processed totals advance, and drop remains `0` unless queue capacity is exceeded
+
+AP migration-proof quick checks:
+
+- `ap-migration-smoke [timeout-ticks]`
+  - expected immediate log: `armed timeout=... (result logs asynchronously)`
+  - expected completion log: `pass active=... moves=... mask=... expected=... elapsed=... timeout=... tick-stall=0`
+  - expected behavior: returns immediately (non-blocking), then validates expected AP mask coverage plus nonzero moves when multiple APs are online
 
 If interactive serial input is unavailable, use stress mode and watch periodic log lines:
 

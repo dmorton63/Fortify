@@ -52,6 +52,47 @@ bool kernel_handle_smp_control_runtime_command(const char *command) {
         console_write(enabled != 0 ? "1\n" : "0\n");
         return true;
     }
+    if (kernel_string_equals(command, "ap-migration-smoke") ||
+        kernel_string_starts_with(command, "ap-migration-smoke ")) {
+        uint64_t timeout_ticks = 6000;
+        if (kernel_string_starts_with(command, "ap-migration-smoke ")) {
+            char timeout_token[16];
+            uint64_t cursor = 19;
+            if (!kernel_parse_token(command, cursor, timeout_token, sizeof(timeout_token), &cursor) ||
+                !kernel_parse_u64_decimal(timeout_token, &timeout_ticks) ||
+                timeout_ticks == 0 || timeout_ticks > 60000) {
+                serial_write("[WARN] smp: serial cmd ap-migration-smoke expects [timeout-ticks] in 1..60000\n");
+                console_write("[WARN] smp: serial cmd ap-migration-smoke expects [timeout-ticks] in 1..60000\n");
+                return true;
+            }
+            char extra_token[4];
+            if (kernel_parse_token(command, cursor, extra_token, sizeof(extra_token), 0)) {
+                serial_write("[WARN] smp: serial cmd ap-migration-smoke accepts only [timeout-ticks]\n");
+                console_write("[WARN] smp: serial cmd ap-migration-smoke accepts only [timeout-ticks]\n");
+                return true;
+            }
+        }
+        if (kernel_ap_migration_smoke_active()) {
+            serial_write("[WARN] smp: serial cmd ap-migration-smoke busy (already running)\n");
+            console_write("[WARN] smp: serial cmd ap-migration-smoke busy (already running)\n");
+            return true;
+        }
+        if (!kernel_start_ap_migration_smoke(timeout_ticks)) {
+            serial_write("[WARN] smp: serial cmd ap-migration-smoke fail active=0 (no AP-pinned tasks)\n");
+            console_write("[WARN] smp: serial cmd ap-migration-smoke fail active=0 (no AP-pinned tasks)\n");
+            return true;
+        }
+
+        char timeout_hex[19];
+        kernel_format_hex64(timeout_hex, timeout_ticks);
+        serial_write("[INFO] smp: serial cmd ap-migration-smoke armed timeout=");
+        serial_write(timeout_hex);
+        serial_write(" (result logs asynchronously)\n");
+        console_write("[INFO] smp: serial cmd ap-migration-smoke armed timeout=");
+        console_write(timeout_hex);
+        console_write(" (result logs asynchronously)\n");
+        return true;
+    }
     if (kernel_string_equals(command, "smp-log")) {
         const uint64_t profile = kernel_smp_log_profile();
         char quiet_health_ticks_hex[19];
