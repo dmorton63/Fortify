@@ -321,6 +321,26 @@ uint64_t webaccess_head_request_done_err_total(void) {
     return __atomic_load_n(&g_web_head_request_done_err_total, __ATOMIC_RELAXED);
 }
 
+uint64_t webaccess_head_request_pending_total(void) {
+    uint64_t total = 0;
+    for (uint64_t i = 0; i < kWebHeadRequestCap; i++) {
+        if (__atomic_load_n(&g_web_head_requests[i].state, __ATOMIC_ACQUIRE) == kWebHeadRequestStatePending) {
+            total++;
+        }
+    }
+    return total;
+}
+
+uint64_t webaccess_head_request_running_total(void) {
+    uint64_t total = 0;
+    for (uint64_t i = 0; i < kWebHeadRequestCap; i++) {
+        if (__atomic_load_n(&g_web_head_requests[i].state, __ATOMIC_ACQUIRE) == kWebHeadRequestStateRunning) {
+            total++;
+        }
+    }
+    return total;
+}
+
 void networking_on_rx_irq(void) {
     __atomic_fetch_add(&g_rx_irq_total, 1, __ATOMIC_RELAXED);
     uint64_t target_cpu = 0;

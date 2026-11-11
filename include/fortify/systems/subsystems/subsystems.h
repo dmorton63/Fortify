@@ -239,6 +239,8 @@ uint64_t webaccess_head_request_submit_total(void);
 uint64_t webaccess_head_request_done_total(void);
 uint64_t webaccess_head_request_done_ok_total(void);
 uint64_t webaccess_head_request_done_err_total(void);
+uint64_t webaccess_head_request_pending_total(void);
+uint64_t webaccess_head_request_running_total(void);
 void networking_on_rx_irq(void);
 uint64_t networking_inject_rx_events(uint64_t count);
 bool networking_request_ap_buffer_cleanup(uint64_t cpu_index);

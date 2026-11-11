@@ -264,6 +264,8 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `net-rx-smoke-wait [count] [timeout-ticks]` (inject synthetic networking RX events, wait for AP queue drain up to timeout, and emit a one-line pass/fail summary with drain status; defaults: count `32`, timeout `600` ticks)
 - `web-head <target> [max-bytes]` (queue an async web head request; max defaults to 256, caps at 4096)
 - `web-head-status <request-id>` (check queued web request status: pending/running/done-ok/done-err with bytes/checksum)
+- `web-head-stats` (print compact web head-request telemetry: submit/done split by ok/err and pending/running state counts)
+- `web-head-smoke-wait <target> [max-bytes] [timeout-ticks]` (queue one web head request and wait for done-ok/done-err up to timeout, actively servicing AP deferred networking jobs while waiting; defaults: max `256`, timeout `600` ticks)
 - `usb-inject <count>` (inject synthetic USB host events)
 - `usb-stats` (print compact USB AP pipeline telemetry: queue depth/high-water, IRQ/drop, processed totals split by IRQ vs injected source, and batch/job totals)
 - `usb-smoke [count]` (inject synthetic USB events and emit a one-line pass/fail summary with requested/injected plus immediate IRQ/drop/processed deltas and queue depth; default count `32`)
@@ -395,6 +397,15 @@ Webcam vertical-slice quick checks:
 - `webcam-stats`
   - expected immediate log: one compact webcam line with queue depth/high-water, frame/drop, processed(total/irq/inject), and batch/job counters
   - expected behavior after drain: queue depth returns to `0`, processed totals advance, and drop remains `0` unless queue capacity is exceeded
+
+Web head-request vertical-slice quick checks:
+
+- `web-head-smoke-wait <target> [max-bytes] [timeout-ticks]`
+  - expected immediate log: `pass id=... state=done-ok bytes=... checksum=... elapsed=... timeout=... tick-stall=0`
+  - expected behavior: request submits successfully, reaches `done-ok` before timeout, and reports deterministic byte/checksum telemetry
+- `web-head-stats`
+  - expected immediate log: one compact webaccess line with submit/done(ok/err) and state(pending/running) counters
+  - expected behavior after smoke completion: done counters advance, pending/running return toward `0`
 
 AP migration-proof quick checks:
 
