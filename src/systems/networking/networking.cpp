@@ -24,6 +24,8 @@ volatile uint64_t g_cleanup_backlog_trigger = 3;
 volatile uint64_t g_ap_deferred_job_total = 0;
 volatile uint64_t g_ap_deferred_job_by_cpu[kMaxCpus] = {};
 volatile uint64_t g_rx_packets_processed_total = 0;
+volatile uint64_t g_rx_packets_processed_irq_total = 0;
+volatile uint64_t g_rx_packets_processed_injected_total = 0;
 volatile uint64_t g_rx_batches_total = 0;
 volatile uint64_t g_rx_packets_processed_by_cpu[kMaxCpus] = {};
 volatile uint64_t g_rx_batches_by_cpu[kMaxCpus] = {};
@@ -37,6 +39,7 @@ volatile uint64_t g_web_head_request_done_ok_total = 0;
 volatile uint64_t g_web_head_request_done_err_total = 0;
 volatile uint32_t g_rx_head_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_rx_tail_by_cpu[kMaxCpus] = {};
+volatile uint32_t g_rx_queue_high_water_by_cpu[kMaxCpus] = {};
 
 struct rx_event {
     uint8_t source;
@@ -110,6 +113,11 @@ bool enqueue_rx_event(uint64_t cpu_index, uint8_t source, uint16_t length) {
     g_rx_queue_by_cpu[cpu_index][tail].source = source;
     g_rx_queue_by_cpu[cpu_index][tail].length = length;
     __atomic_store_n(&g_rx_tail_by_cpu[cpu_index], next_tail, __ATOMIC_RELAXED);
+    const uint32_t depth_after_enqueue = queue_depth_for_cpu(cpu_index);
+    const uint32_t high_water = __atomic_load_n(&g_rx_queue_high_water_by_cpu[cpu_index], __ATOMIC_RELAXED);
+    if (depth_after_enqueue > high_water) {
+        __atomic_store_n(&g_rx_queue_high_water_by_cpu[cpu_index], depth_after_enqueue, __ATOMIC_RELAXED);
+    }
     return true;
 }
 
@@ -186,6 +194,8 @@ bool networking_init(void) {
     __atomic_store_n(&g_rx_irq_drop_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_next_target_ap, 1, __ATOMIC_RELAXED);
     __atomic_store_n(&g_rx_packets_processed_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_rx_packets_processed_irq_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_rx_packets_processed_injected_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_rx_batches_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_web_head_request_next_id, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_web_head_request_submit_total, 0, __ATOMIC_RELAXED);
@@ -198,6 +208,7 @@ bool networking_init(void) {
         __atomic_store_n(&g_rx_batches_by_cpu[i], 0, __ATOMIC_RELAXED);
         __atomic_store_n(&g_rx_head_by_cpu[i], 0, __ATOMIC_RELAXED);
         __atomic_store_n(&g_rx_tail_by_cpu[i], 0, __ATOMIC_RELAXED);
+        __atomic_store_n(&g_rx_queue_high_water_by_cpu[i], 0, __ATOMIC_RELAXED);
     }
     for (uint64_t i = 0; i < kWebHeadRequestCap; i++) {
         __atomic_store_n(&g_web_head_requests[i].state, kWebHeadRequestStateFree, __ATOMIC_RELAXED);
@@ -371,12 +382,18 @@ void networking_process_ap_deferred_job(uint64_t cpu_index, uint64_t sequence) {
         target_batch = kRxBatchPerApJobMax;
     }
     uint64_t processed = 0;
+    uint64_t processed_irq = 0;
+    uint64_t processed_injected = 0;
     for (uint64_t i = 0; i < target_batch; i++) {
         rx_event event = {};
         if (!dequeue_rx_event(cpu_index, &event)) {
             break;
         }
-        (void)event.source;
+        if (event.source == 1) {
+            processed_irq++;
+        } else {
+            processed_injected++;
+        }
         (void)event.length;
         processed++;
     }
@@ -393,6 +410,8 @@ void networking_process_ap_deferred_job(uint64_t cpu_index, uint64_t sequence) {
     }
     if (processed != 0) {
         __atomic_fetch_add(&g_rx_packets_processed_total, processed, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&g_rx_packets_processed_irq_total, processed_irq, __ATOMIC_RELAXED);
+        __atomic_fetch_add(&g_rx_packets_processed_injected_total, processed_injected, __ATOMIC_RELAXED);
         __atomic_fetch_add(&g_rx_batches_total, 1, __ATOMIC_RELAXED);
         __atomic_fetch_add(&g_rx_packets_processed_by_cpu[cpu_index], processed, __ATOMIC_RELAXED);
         __atomic_fetch_add(&g_rx_batches_by_cpu[cpu_index], 1, __ATOMIC_RELAXED);
@@ -427,8 +446,35 @@ uint64_t networking_queue_depth_for_cpu(uint64_t cpu_index) {
     return static_cast<uint64_t>(queue_depth_for_cpu(cpu_index));
 }
 
+uint64_t networking_queue_high_water_for_cpu(uint64_t cpu_index) {
+    if (cpu_index >= kMaxCpus) {
+        return 0;
+    }
+    return static_cast<uint64_t>(__atomic_load_n(&g_rx_queue_high_water_by_cpu[cpu_index], __ATOMIC_RELAXED));
+}
+
+uint64_t networking_queue_high_water_total(void) {
+    uint64_t total = smp_total_cpu_count();
+    if (total > kMaxCpus) {
+        total = kMaxCpus;
+    }
+    uint64_t high_water_total = 0;
+    for (uint64_t cpu = 1; cpu < total; cpu++) {
+        high_water_total += static_cast<uint64_t>(__atomic_load_n(&g_rx_queue_high_water_by_cpu[cpu], __ATOMIC_RELAXED));
+    }
+    return high_water_total;
+}
+
 uint64_t networking_rx_packets_processed_total(void) {
     return __atomic_load_n(&g_rx_packets_processed_total, __ATOMIC_RELAXED);
+}
+
+uint64_t networking_rx_packets_processed_irq_total(void) {
+    return __atomic_load_n(&g_rx_packets_processed_irq_total, __ATOMIC_RELAXED);
+}
+
+uint64_t networking_rx_packets_processed_injected_total(void) {
+    return __atomic_load_n(&g_rx_packets_processed_injected_total, __ATOMIC_RELAXED);
 }
 
 uint64_t networking_rx_batches_total(void) {

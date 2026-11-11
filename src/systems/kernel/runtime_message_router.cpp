@@ -208,6 +208,30 @@ uint64_t runtime_message_router_route_drop_unroutable_total(void) {
     return g_runtime_event_route_drop_unroutable_total;
 }
 
+bool runtime_message_router_reset_stats(uint64_t *pending_depth) {
+    const uint64_t depth = runtime_message_router_queue_depth();
+    if (pending_depth != 0) {
+        *pending_depth = depth;
+    }
+    if (depth != 0) {
+        return false;
+    }
+    for (uint64_t i = 0; i < kRuntimeMessageQueueTargetCount; i++) {
+        g_runtime_target_queues[i].drop_total = 0;
+        g_runtime_target_queues[i].high_water = 0;
+        g_runtime_target_queues[i].enqueued_total = 0;
+        g_runtime_target_queues[i].dequeued_total = 0;
+    }
+    g_runtime_last_dequeue_queue = kCommandQueueIndex;
+    g_runtime_event_dispatch_input_total = 0;
+    g_runtime_event_dispatch_command_total = 0;
+    g_runtime_event_route_drop_total = 0;
+    g_runtime_event_route_drop_invalid_source_total = 0;
+    g_runtime_event_route_drop_keyboard_suppressed_total = 0;
+    g_runtime_event_route_drop_unroutable_total = 0;
+    return true;
+}
+
 bool runtime_message_router_probe_route_drop(runtime_route_drop_probe probe) {
     runtime_message message = {};
     bool suppress_keyboard = false;

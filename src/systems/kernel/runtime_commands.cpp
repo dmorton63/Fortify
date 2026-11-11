@@ -1,6 +1,7 @@
 #include "fortify/systems/kernel/runtime_commands.h"
 
 #include "fortify/systems/kernel/ap_trigger_profile.h"
+#include "fortify/systems/kernel/kernel_idle_observability.h"
 #include "fortify/systems/kernel/kernel_string.h"
 #include "fortify/systems/kernel/runtime_command_ap_stats.h"
 #include "fortify/systems/kernel/runtime_command_filesystem_surface.h"
@@ -18,13 +19,302 @@ extern "C" volatile uint64_t g_ap_trigger_profile;
 namespace {
 static bool g_runtime_keyboard_events_to_commands = true;
 static uint64_t g_runtime_router_dequeue_pause_until_tick = 0;
+static uint64_t g_runtime_backlog_test_pause_ticks = 300;
+static uint64_t g_runtime_smoke_extended_backlog_count = 16;
 
 static void log_ap_trigger_command_help(void) {
-    log_info("smp: serial cmd: ap-trigger [0|1|2], ap-trigger, ap-stats, ap-task-start, ap-task-stop, ap-task-migrate [0|1], video-demo [0|1], video-style [0|1|2], video-speed <1..32>, video-font [0|1|2], video-text-scale <1..4>, input-kbd [0|1], net-rx-inject <count>, web-head <target> [max-bytes], web-head-status <request-id>, usb-inject <count>, storage-inject <count>, audio-inject <count>, webcam-inject <count>, inject-all <count>, fs-root-ls [source], fs-root-head <name.EXT> [source], fs-9p-probe, fs-9p-head <path> [max-bytes], fs-9p-head-status <request-id>, surface-create <type> <title>, surface-ls, rmsg-drop-test <src|kbd|unroute>, rmsg-selftest, rmsg-backlog-test <count> [input|cmd|both], help");
+    log_info("smp: serial cmd: ap-trigger [0|1|2], ap-trigger, ap-stats, ap-task-start, ap-task-stop, ap-task-migrate [0|1], video-demo [0|1], video-style [0|1|2], video-speed <1..32>, video-font [0|1|2], video-text-scale <1..4>, input-kbd [0|1], net-rx-inject <count>, net-rx-stats, net-rx-smoke [count], net-rx-smoke-wait [count] [timeout-ticks], web-head <target> [max-bytes], web-head-status <request-id>, usb-inject <count>, usb-stats, usb-smoke [count], usb-smoke-wait [count] [timeout-ticks], storage-inject <count>, storage-stats, storage-smoke [count], storage-smoke-wait [count] [timeout-ticks], audio-inject <count>, audio-stats, audio-smoke [count], audio-smoke-wait [count] [timeout-ticks], webcam-inject <count>, webcam-stats, webcam-smoke [count], webcam-smoke-wait [count] [timeout-ticks], inject-all <count>, fs-root-ls [source], fs-root-head <name.EXT> [source], fs-9p-probe, fs-9p-head <path> [max-bytes], fs-9p-head-status <request-id>, surface-create <type> <title>, surface-ls, rmsg-profile [balanced|stress|quiet], rmsg-stats, rmsg-verify, rmsg-drop-test <src|kbd|unroute>, rmsg-selftest, rmsg-reset-stats, rmsg-smoke, rmsg-smoke-extended, rmsg-backlog-test <count> [input|cmd|both], help");
 }
 
 static void log_ap_stats_snapshot(void) {
     kernel_log_ap_stats_snapshot();
+}
+
+static void log_runtime_message_router_stats_snapshot(void) {
+    char queue_depth_hex[19];
+    char queue_high_water_hex[19];
+    char queue_drop_hex[19];
+    char enqueued_total_hex[19];
+    char dequeued_total_hex[19];
+    char dispatch_input_hex[19];
+    char dispatch_command_hex[19];
+    char route_drop_hex[19];
+    char drop_src_hex[19];
+    char drop_kbd_hex[19];
+    char drop_unroute_hex[19];
+    char input_depth_hex[19];
+    char input_high_water_hex[19];
+    char input_drop_hex[19];
+    char input_enqueued_hex[19];
+    char input_dequeued_hex[19];
+    char command_depth_hex[19];
+    char command_high_water_hex[19];
+    char command_drop_hex[19];
+    char command_enqueued_hex[19];
+    char command_dequeued_hex[19];
+    kernel_format_hex64(queue_depth_hex, runtime_message_router_queue_depth());
+    kernel_format_hex64(queue_high_water_hex, runtime_message_router_queue_high_water());
+    kernel_format_hex64(queue_drop_hex, runtime_message_router_drop_total());
+    kernel_format_hex64(enqueued_total_hex, runtime_message_router_enqueued_total());
+    kernel_format_hex64(dequeued_total_hex, runtime_message_router_dequeued_total());
+    kernel_format_hex64(dispatch_input_hex, runtime_message_router_dispatch_input_total());
+    kernel_format_hex64(dispatch_command_hex, runtime_message_router_dispatch_command_total());
+    kernel_format_hex64(route_drop_hex, runtime_message_router_route_drop_total());
+    kernel_format_hex64(drop_src_hex, runtime_message_router_route_drop_invalid_source_total());
+    kernel_format_hex64(drop_kbd_hex, runtime_message_router_route_drop_keyboard_suppressed_total());
+    kernel_format_hex64(drop_unroute_hex, runtime_message_router_route_drop_unroutable_total());
+    kernel_format_hex64(input_depth_hex,
+                        runtime_message_router_queue_depth_for_target(runtime_message_target::compositor_input));
+    kernel_format_hex64(input_high_water_hex,
+                        runtime_message_router_queue_high_water_for_target(runtime_message_target::compositor_input));
+    kernel_format_hex64(input_drop_hex,
+                        runtime_message_router_drop_total_for_target(runtime_message_target::compositor_input));
+    kernel_format_hex64(input_enqueued_hex,
+                        runtime_message_router_enqueued_total_for_target(runtime_message_target::compositor_input));
+    kernel_format_hex64(input_dequeued_hex,
+                        runtime_message_router_dequeued_total_for_target(runtime_message_target::compositor_input));
+    kernel_format_hex64(command_depth_hex,
+                        runtime_message_router_queue_depth_for_target(runtime_message_target::runtime_command));
+    kernel_format_hex64(command_high_water_hex,
+                        runtime_message_router_queue_high_water_for_target(runtime_message_target::runtime_command));
+    kernel_format_hex64(command_drop_hex,
+                        runtime_message_router_drop_total_for_target(runtime_message_target::runtime_command));
+    kernel_format_hex64(command_enqueued_hex,
+                        runtime_message_router_enqueued_total_for_target(runtime_message_target::runtime_command));
+    kernel_format_hex64(command_dequeued_hex,
+                        runtime_message_router_dequeued_total_for_target(runtime_message_target::runtime_command));
+
+    serial_write("[INFO] smp: serial cmd rmsg-stats q(depth/hwm/drop)=");
+    serial_write(queue_depth_hex);
+    serial_write("/");
+    serial_write(queue_high_water_hex);
+    serial_write("/");
+    serial_write(queue_drop_hex);
+    serial_write(" flow(enq/deq in/cmd/drop)=");
+    serial_write(enqueued_total_hex);
+    serial_write("/");
+    serial_write(dequeued_total_hex);
+    serial_write(" ");
+    serial_write(dispatch_input_hex);
+    serial_write("/");
+    serial_write(dispatch_command_hex);
+    serial_write("/");
+    serial_write(route_drop_hex);
+    serial_write(" drop-reason(src/kbd/unroute)=");
+    serial_write(drop_src_hex);
+    serial_write("/");
+    serial_write(drop_kbd_hex);
+    serial_write("/");
+    serial_write(drop_unroute_hex);
+    serial_write(" target(input d/h/d e/d cmd d/h/d e/d)=");
+    serial_write(input_depth_hex);
+    serial_write("/");
+    serial_write(input_high_water_hex);
+    serial_write("/");
+    serial_write(input_drop_hex);
+    serial_write(" ");
+    serial_write(input_enqueued_hex);
+    serial_write("/");
+    serial_write(input_dequeued_hex);
+    serial_write(" ");
+    serial_write(command_depth_hex);
+    serial_write("/");
+    serial_write(command_high_water_hex);
+    serial_write("/");
+    serial_write(command_drop_hex);
+    serial_write(" ");
+    serial_write(command_enqueued_hex);
+    serial_write("/");
+    serial_write(command_dequeued_hex);
+    serial_write("\n");
+
+    console_write("[INFO] smp: serial cmd rmsg-stats q(depth/hwm/drop)=");
+    console_write(queue_depth_hex);
+    console_write("/");
+    console_write(queue_high_water_hex);
+    console_write("/");
+    console_write(queue_drop_hex);
+    console_write(" flow(enq/deq in/cmd/drop)=");
+    console_write(enqueued_total_hex);
+    console_write("/");
+    console_write(dequeued_total_hex);
+    console_write(" ");
+    console_write(dispatch_input_hex);
+    console_write("/");
+    console_write(dispatch_command_hex);
+    console_write("/");
+    console_write(route_drop_hex);
+    console_write(" drop-reason(src/kbd/unroute)=");
+    console_write(drop_src_hex);
+    console_write("/");
+    console_write(drop_kbd_hex);
+    console_write("/");
+    console_write(drop_unroute_hex);
+    console_write(" target(input d/h/d e/d cmd d/h/d e/d)=");
+    console_write(input_depth_hex);
+    console_write("/");
+    console_write(input_high_water_hex);
+    console_write("/");
+    console_write(input_drop_hex);
+    console_write(" ");
+    console_write(input_enqueued_hex);
+    console_write("/");
+    console_write(input_dequeued_hex);
+    console_write(" ");
+    console_write(command_depth_hex);
+    console_write("/");
+    console_write(command_high_water_hex);
+    console_write("/");
+    console_write(command_drop_hex);
+    console_write(" ");
+    console_write(command_enqueued_hex);
+    console_write("/");
+    console_write(command_dequeued_hex);
+    console_write("\n");
+}
+
+static bool run_runtime_message_router_selftest(uint64_t *out_delta_src,
+                                                uint64_t *out_delta_kbd,
+                                                uint64_t *out_delta_unroute,
+                                                uint64_t *out_delta_total) {
+    const uint64_t before_src = runtime_message_router_route_drop_invalid_source_total();
+    const uint64_t before_kbd = runtime_message_router_route_drop_keyboard_suppressed_total();
+    const uint64_t before_unroute = runtime_message_router_route_drop_unroutable_total();
+    const uint64_t before_total = runtime_message_router_route_drop_total();
+    const bool probe_src = runtime_message_router_probe_route_drop(runtime_route_drop_probe::invalid_source);
+    const bool probe_kbd = runtime_message_router_probe_route_drop(runtime_route_drop_probe::keyboard_suppressed);
+    const bool probe_unroute = runtime_message_router_probe_route_drop(runtime_route_drop_probe::unroutable);
+    const uint64_t delta_src = runtime_message_router_route_drop_invalid_source_total() - before_src;
+    const uint64_t delta_kbd = runtime_message_router_route_drop_keyboard_suppressed_total() - before_kbd;
+    const uint64_t delta_unroute = runtime_message_router_route_drop_unroutable_total() - before_unroute;
+    const uint64_t delta_total = runtime_message_router_route_drop_total() - before_total;
+    if (out_delta_src != 0) {
+        *out_delta_src = delta_src;
+    }
+    if (out_delta_kbd != 0) {
+        *out_delta_kbd = delta_kbd;
+    }
+    if (out_delta_unroute != 0) {
+        *out_delta_unroute = delta_unroute;
+    }
+    if (out_delta_total != 0) {
+        *out_delta_total = delta_total;
+    }
+    return probe_src && probe_kbd && probe_unroute && delta_src == 1 && delta_kbd == 1 &&
+           delta_unroute == 1 && delta_total == 3;
+}
+
+enum runtime_message_router_verify_failure : uint64_t {
+    kVerifyFailureQueueDepth = 1ULL << 0,
+    kVerifyFailureDropTotal = 1ULL << 1,
+    kVerifyFailureEnqueuedTotal = 1ULL << 2,
+    kVerifyFailureDequeuedTotal = 1ULL << 3,
+    kVerifyFailureRouteDropReasonTotal = 1ULL << 4,
+    kVerifyFailureDispatchParity = 1ULL << 5,
+};
+
+static bool verify_runtime_message_router_consistency(uint64_t *out_failure_mask) {
+    const uint64_t input_depth =
+        runtime_message_router_queue_depth_for_target(runtime_message_target::compositor_input);
+    const uint64_t command_depth =
+        runtime_message_router_queue_depth_for_target(runtime_message_target::runtime_command);
+    const uint64_t input_drop =
+        runtime_message_router_drop_total_for_target(runtime_message_target::compositor_input);
+    const uint64_t command_drop =
+        runtime_message_router_drop_total_for_target(runtime_message_target::runtime_command);
+    const uint64_t input_enqueued =
+        runtime_message_router_enqueued_total_for_target(runtime_message_target::compositor_input);
+    const uint64_t command_enqueued =
+        runtime_message_router_enqueued_total_for_target(runtime_message_target::runtime_command);
+    const uint64_t input_dequeued =
+        runtime_message_router_dequeued_total_for_target(runtime_message_target::compositor_input);
+    const uint64_t command_dequeued =
+        runtime_message_router_dequeued_total_for_target(runtime_message_target::runtime_command);
+    const uint64_t dispatch_input_total = runtime_message_router_dispatch_input_total();
+    const uint64_t dispatch_command_total = runtime_message_router_dispatch_command_total();
+    const uint64_t route_drop_total = runtime_message_router_route_drop_total();
+    const uint64_t route_drop_reason_total =
+        runtime_message_router_route_drop_invalid_source_total() +
+        runtime_message_router_route_drop_keyboard_suppressed_total() +
+        runtime_message_router_route_drop_unroutable_total();
+
+    uint64_t failure_mask = 0;
+    if (runtime_message_router_queue_depth() != (input_depth + command_depth)) {
+        failure_mask |= kVerifyFailureQueueDepth;
+    }
+    if (runtime_message_router_drop_total() != (input_drop + command_drop)) {
+        failure_mask |= kVerifyFailureDropTotal;
+    }
+    if (runtime_message_router_enqueued_total() != (input_enqueued + command_enqueued)) {
+        failure_mask |= kVerifyFailureEnqueuedTotal;
+    }
+    if (runtime_message_router_dequeued_total() != (input_dequeued + command_dequeued)) {
+        failure_mask |= kVerifyFailureDequeuedTotal;
+    }
+    if (route_drop_total != route_drop_reason_total) {
+        failure_mask |= kVerifyFailureRouteDropReasonTotal;
+    }
+    const uint64_t routed_total = dispatch_input_total + dispatch_command_total + route_drop_total;
+    const uint64_t dequeued_total = runtime_message_router_dequeued_total();
+    if (routed_total < dequeued_total ||
+        (routed_total - dequeued_total) > route_drop_total) {
+        failure_mask |= kVerifyFailureDispatchParity;
+    }
+    if (out_failure_mask != 0) {
+        *out_failure_mask = failure_mask;
+    }
+    return failure_mask == 0;
+}
+
+static void set_runtime_message_router_profile(uint64_t warn_depth,
+                                               uint64_t transition_ticks,
+                                               uint64_t backlog_pause_ticks,
+                                               uint64_t smoke_backlog_count) {
+    kernel_set_runtime_message_backlog_guardrail(warn_depth, transition_ticks);
+    g_runtime_backlog_test_pause_ticks = backlog_pause_ticks;
+    g_runtime_smoke_extended_backlog_count = smoke_backlog_count;
+}
+
+static bool inject_runtime_message_router_backlog(uint64_t count,
+                                                  bool inject_input,
+                                                  bool inject_command,
+                                                  uint64_t *out_input_enqueued,
+                                                  uint64_t *out_command_enqueued) {
+    uint64_t input_enqueued = 0;
+    uint64_t command_enqueued = 0;
+    for (uint64_t i = 0; i < count; i++) {
+        if (inject_input) {
+            runtime_message input_msg = {};
+            input_msg.category = runtime_message_category::input;
+            input_msg.target = runtime_message_target::compositor_input;
+            input_msg.target_id = runtime_message_target_id::compositor_primary;
+            input_msg.input_event.source = runtime_input_source::serial;
+            input_msg.input_event.message.type = input_message_type::key_char;
+            input_msg.input_event.message.value = '\0';
+            input_msg.input_event.message.source = input_message_source::keyboard_irq;
+            input_msg.input_event.message.tick = timer_ticks();
+            input_msg.input_event.message.sequence = i;
+            if (runtime_message_router_enqueue(input_msg)) {
+                input_enqueued++;
+            }
+        }
+        if (inject_command) {
+            runtime_message command_msg = {};
+            command_msg.category = runtime_message_category::command;
+            command_msg.target = runtime_message_target::runtime_command;
+            command_msg.target_id = runtime_message_target_id::runtime_command_primary;
+            if (runtime_message_router_enqueue(command_msg)) {
+                command_enqueued++;
+            }
+        }
+    }
+    if (out_input_enqueued != 0) {
+        *out_input_enqueued = input_enqueued;
+    }
+    if (out_command_enqueued != 0) {
+        *out_command_enqueued = command_enqueued;
+    }
+    return (!inject_input || input_enqueued == count) && (!inject_command || command_enqueued == count);
 }
 
 static void handle_serial_runtime_command(const char *command) {
@@ -49,6 +339,10 @@ static void handle_serial_runtime_command(const char *command) {
     }
     if (kernel_string_equals(command, "ap-stats")) {
         log_ap_stats_snapshot();
+        return;
+    }
+    if (kernel_string_equals(command, "rmsg-stats")) {
+        log_runtime_message_router_stats_snapshot();
         return;
     }
     if (kernel_string_equals(command, "rmsg-drop-test src")) {
@@ -82,19 +376,12 @@ static void handle_serial_runtime_command(const char *command) {
         return;
     }
     if (kernel_string_equals(command, "rmsg-selftest")) {
-        const uint64_t before_src = runtime_message_router_route_drop_invalid_source_total();
-        const uint64_t before_kbd = runtime_message_router_route_drop_keyboard_suppressed_total();
-        const uint64_t before_unroute = runtime_message_router_route_drop_unroutable_total();
-        const uint64_t before_total = runtime_message_router_route_drop_total();
-        const bool probe_src = runtime_message_router_probe_route_drop(runtime_route_drop_probe::invalid_source);
-        const bool probe_kbd = runtime_message_router_probe_route_drop(runtime_route_drop_probe::keyboard_suppressed);
-        const bool probe_unroute = runtime_message_router_probe_route_drop(runtime_route_drop_probe::unroutable);
-        const uint64_t delta_src = runtime_message_router_route_drop_invalid_source_total() - before_src;
-        const uint64_t delta_kbd = runtime_message_router_route_drop_keyboard_suppressed_total() - before_kbd;
-        const uint64_t delta_unroute = runtime_message_router_route_drop_unroutable_total() - before_unroute;
-        const uint64_t delta_total = runtime_message_router_route_drop_total() - before_total;
-        const bool pass = probe_src && probe_kbd && probe_unroute && delta_src == 1 && delta_kbd == 1 &&
-                          delta_unroute == 1 && delta_total == 3;
+        uint64_t delta_src = 0;
+        uint64_t delta_kbd = 0;
+        uint64_t delta_unroute = 0;
+        uint64_t delta_total = 0;
+        const bool pass = run_runtime_message_router_selftest(
+            &delta_src, &delta_kbd, &delta_unroute, &delta_total);
         char delta_src_hex[19];
         char delta_kbd_hex[19];
         char delta_unroute_hex[19];
@@ -122,6 +409,259 @@ static void handle_serial_runtime_command(const char *command) {
         console_write(delta_unroute_hex);
         console_write("/");
         console_write(delta_total_hex);
+        console_write("\n");
+        return;
+    }
+    if (kernel_string_equals(command, "rmsg-reset-stats")) {
+        uint64_t pending_depth = 0;
+        if (runtime_message_router_reset_stats(&pending_depth)) {
+            serial_write("[INFO] smp: serial cmd rmsg-reset-stats reset=ok\n");
+            console_write("[INFO] smp: serial cmd rmsg-reset-stats reset=ok\n");
+        } else {
+            char pending_depth_hex[19];
+            kernel_format_hex64(pending_depth_hex, pending_depth);
+            serial_write("[WARN] smp: serial cmd rmsg-reset-stats reset=blocked pending-depth=");
+            serial_write(pending_depth_hex);
+            serial_write("\n");
+            console_write("[WARN] smp: serial cmd rmsg-reset-stats reset=blocked pending-depth=");
+            console_write(pending_depth_hex);
+            console_write("\n");
+        }
+        return;
+    }
+    if (kernel_string_equals(command, "rmsg-profile")) {
+        char warn_depth_hex[19];
+        char transition_ticks_hex[19];
+        char pause_ticks_hex[19];
+        char smoke_count_hex[19];
+        kernel_format_hex64(warn_depth_hex, kernel_runtime_message_backlog_warn_depth());
+        kernel_format_hex64(transition_ticks_hex, kernel_runtime_message_backlog_transition_ticks());
+        kernel_format_hex64(pause_ticks_hex, g_runtime_backlog_test_pause_ticks);
+        kernel_format_hex64(smoke_count_hex, g_runtime_smoke_extended_backlog_count);
+        serial_write("[INFO] smp: serial cmd rmsg-profile current warn-depth/transition/pause/smoke=");
+        serial_write(warn_depth_hex);
+        serial_write("/");
+        serial_write(transition_ticks_hex);
+        serial_write("/");
+        serial_write(pause_ticks_hex);
+        serial_write("/");
+        serial_write(smoke_count_hex);
+        serial_write("\n");
+        console_write("[INFO] smp: serial cmd rmsg-profile current warn-depth/transition/pause/smoke=");
+        console_write(warn_depth_hex);
+        console_write("/");
+        console_write(transition_ticks_hex);
+        console_write("/");
+        console_write(pause_ticks_hex);
+        console_write("/");
+        console_write(smoke_count_hex);
+        console_write("\n");
+        return;
+    }
+    if (kernel_string_equals(command, "rmsg-verify")) {
+        uint64_t failure_mask = 0;
+        const bool pass = verify_runtime_message_router_consistency(&failure_mask);
+        char failure_hex[19];
+        kernel_format_hex64(failure_hex, failure_mask);
+        serial_write(pass ? "[INFO] smp: serial cmd rmsg-verify pass fail-mask="
+                          : "[WARN] smp: serial cmd rmsg-verify fail fail-mask=");
+        serial_write(failure_hex);
+        serial_write("\n");
+        console_write(pass ? "[INFO] smp: serial cmd rmsg-verify pass fail-mask="
+                           : "[WARN] smp: serial cmd rmsg-verify fail fail-mask=");
+        console_write(failure_hex);
+        console_write("\n");
+        return;
+    }
+    if (kernel_string_starts_with(command, "rmsg-profile ")) {
+        const char *profile = command + 13;
+        if (kernel_string_equals(profile, "balanced")) {
+            set_runtime_message_router_profile(16, 25, 300, 16);
+        } else if (kernel_string_equals(profile, "stress")) {
+            set_runtime_message_router_profile(8, 10, 450, 64);
+        } else if (kernel_string_equals(profile, "quiet")) {
+            set_runtime_message_router_profile(32, 50, 200, 16);
+        } else {
+            serial_write("[WARN] smp: serial cmd rmsg-profile expects balanced|stress|quiet\n");
+            console_write("[WARN] smp: serial cmd rmsg-profile expects balanced|stress|quiet\n");
+            return;
+        }
+        char warn_depth_hex[19];
+        char transition_ticks_hex[19];
+        char pause_ticks_hex[19];
+        char smoke_count_hex[19];
+        kernel_format_hex64(warn_depth_hex, kernel_runtime_message_backlog_warn_depth());
+        kernel_format_hex64(transition_ticks_hex, kernel_runtime_message_backlog_transition_ticks());
+        kernel_format_hex64(pause_ticks_hex, g_runtime_backlog_test_pause_ticks);
+        kernel_format_hex64(smoke_count_hex, g_runtime_smoke_extended_backlog_count);
+        serial_write("[INFO] smp: serial cmd rmsg-profile set warn-depth/transition/pause/smoke=");
+        serial_write(warn_depth_hex);
+        serial_write("/");
+        serial_write(transition_ticks_hex);
+        serial_write("/");
+        serial_write(pause_ticks_hex);
+        serial_write("/");
+        serial_write(smoke_count_hex);
+        serial_write("\n");
+        console_write("[INFO] smp: serial cmd rmsg-profile set warn-depth/transition/pause/smoke=");
+        console_write(warn_depth_hex);
+        console_write("/");
+        console_write(transition_ticks_hex);
+        console_write("/");
+        console_write(pause_ticks_hex);
+        console_write("/");
+        console_write(smoke_count_hex);
+        console_write("\n");
+        return;
+    }
+    if (kernel_string_equals(command, "rmsg-smoke")) {
+        uint64_t pending_depth = 0;
+        if (!runtime_message_router_reset_stats(&pending_depth)) {
+            char pending_depth_hex[19];
+            kernel_format_hex64(pending_depth_hex, pending_depth);
+            serial_write("[WARN] smp: serial cmd rmsg-smoke fail reset=blocked pending-depth=");
+            serial_write(pending_depth_hex);
+            serial_write("\n");
+            console_write("[WARN] smp: serial cmd rmsg-smoke fail reset=blocked pending-depth=");
+            console_write(pending_depth_hex);
+            console_write("\n");
+            return;
+        }
+
+        uint64_t delta_src = 0;
+        uint64_t delta_kbd = 0;
+        uint64_t delta_unroute = 0;
+        uint64_t delta_total = 0;
+        const bool selftest_pass = run_runtime_message_router_selftest(
+            &delta_src, &delta_kbd, &delta_unroute, &delta_total);
+        char delta_src_hex[19];
+        char delta_kbd_hex[19];
+        char delta_unroute_hex[19];
+        char delta_total_hex[19];
+        kernel_format_hex64(delta_src_hex, delta_src);
+        kernel_format_hex64(delta_kbd_hex, delta_kbd);
+        kernel_format_hex64(delta_unroute_hex, delta_unroute);
+        kernel_format_hex64(delta_total_hex, delta_total);
+        serial_write(selftest_pass ? "[INFO] smp: serial cmd rmsg-smoke pass reset=ok selftest=pass delta(src/kbd/unroute/total)="
+                                   : "[WARN] smp: serial cmd rmsg-smoke fail reset=ok selftest=fail delta(src/kbd/unroute/total)=");
+        serial_write(delta_src_hex);
+        serial_write("/");
+        serial_write(delta_kbd_hex);
+        serial_write("/");
+        serial_write(delta_unroute_hex);
+        serial_write("/");
+        serial_write(delta_total_hex);
+        serial_write("\n");
+        console_write(selftest_pass ? "[INFO] smp: serial cmd rmsg-smoke pass reset=ok selftest=pass delta(src/kbd/unroute/total)="
+                                    : "[WARN] smp: serial cmd rmsg-smoke fail reset=ok selftest=fail delta(src/kbd/unroute/total)=");
+        console_write(delta_src_hex);
+        console_write("/");
+        console_write(delta_kbd_hex);
+        console_write("/");
+        console_write(delta_unroute_hex);
+        console_write("/");
+        console_write(delta_total_hex);
+        console_write("\n");
+        return;
+    }
+    if (kernel_string_equals(command, "rmsg-smoke-extended")) {
+        uint64_t pending_depth = 0;
+        if (!runtime_message_router_reset_stats(&pending_depth)) {
+            char pending_depth_hex[19];
+            kernel_format_hex64(pending_depth_hex, pending_depth);
+            serial_write("[WARN] smp: serial cmd rmsg-smoke-extended fail reset=blocked pending-depth=");
+            serial_write(pending_depth_hex);
+            serial_write("\n");
+            console_write("[WARN] smp: serial cmd rmsg-smoke-extended fail reset=blocked pending-depth=");
+            console_write(pending_depth_hex);
+            console_write("\n");
+            return;
+        }
+
+        uint64_t delta_src = 0;
+        uint64_t delta_kbd = 0;
+        uint64_t delta_unroute = 0;
+        uint64_t delta_total = 0;
+        const bool selftest_pass = run_runtime_message_router_selftest(
+            &delta_src, &delta_kbd, &delta_unroute, &delta_total);
+        uint64_t input_enqueued = 0;
+        uint64_t command_enqueued = 0;
+        const bool backlog_pass = inject_runtime_message_router_backlog(
+            g_runtime_smoke_extended_backlog_count,
+            true,
+            true,
+            &input_enqueued,
+            &command_enqueued);
+        g_runtime_router_dequeue_pause_until_tick = timer_ticks() + g_runtime_backlog_test_pause_ticks;
+
+        char delta_src_hex[19];
+        char delta_kbd_hex[19];
+        char delta_unroute_hex[19];
+        char delta_total_hex[19];
+        char smoke_count_hex[19];
+        char input_enqueued_hex[19];
+        char command_enqueued_hex[19];
+        kernel_format_hex64(delta_src_hex, delta_src);
+        kernel_format_hex64(delta_kbd_hex, delta_kbd);
+        kernel_format_hex64(delta_unroute_hex, delta_unroute);
+        kernel_format_hex64(delta_total_hex, delta_total);
+        kernel_format_hex64(smoke_count_hex, g_runtime_smoke_extended_backlog_count);
+        kernel_format_hex64(input_enqueued_hex, input_enqueued);
+        kernel_format_hex64(command_enqueued_hex, command_enqueued);
+
+        uint64_t verify_failure_mask = 0;
+        const bool verify_pass = verify_runtime_message_router_consistency(&verify_failure_mask);
+        char verify_failure_hex[19];
+        kernel_format_hex64(verify_failure_hex, verify_failure_mask);
+        const bool pass = selftest_pass && backlog_pass && verify_pass;
+        serial_write(pass ? "[INFO] smp: serial cmd rmsg-smoke-extended pass reset=ok selftest=pass backlog(request/enq input/cmd)="
+                          : "[WARN] smp: serial cmd rmsg-smoke-extended fail reset=ok selftest/backlog/verify=");
+        if (!pass) {
+            serial_write(selftest_pass ? "pass/" : "fail/");
+            serial_write(backlog_pass ? "pass/" : "fail/");
+            serial_write(verify_pass ? "pass " : "fail ");
+            serial_write("backlog(request/enq input/cmd)=");
+        }
+        serial_write(smoke_count_hex);
+        serial_write("/");
+        serial_write(input_enqueued_hex);
+        serial_write("/");
+        serial_write(command_enqueued_hex);
+        serial_write(" delta(src/kbd/unroute/total)=");
+        serial_write(delta_src_hex);
+        serial_write("/");
+        serial_write(delta_kbd_hex);
+        serial_write("/");
+        serial_write(delta_unroute_hex);
+        serial_write("/");
+        serial_write(delta_total_hex);
+        serial_write(" verify-fail-mask=");
+        serial_write(verify_failure_hex);
+        serial_write("\n");
+
+        console_write(pass ? "[INFO] smp: serial cmd rmsg-smoke-extended pass reset=ok selftest=pass backlog(request/enq input/cmd)="
+                           : "[WARN] smp: serial cmd rmsg-smoke-extended fail reset=ok selftest/backlog/verify=");
+        if (!pass) {
+            console_write(selftest_pass ? "pass/" : "fail/");
+            console_write(backlog_pass ? "pass/" : "fail/");
+            console_write(verify_pass ? "pass " : "fail ");
+            console_write("backlog(request/enq input/cmd)=");
+        }
+        console_write(smoke_count_hex);
+        console_write("/");
+        console_write(input_enqueued_hex);
+        console_write("/");
+        console_write(command_enqueued_hex);
+        console_write(" delta(src/kbd/unroute/total)=");
+        console_write(delta_src_hex);
+        console_write("/");
+        console_write(delta_kbd_hex);
+        console_write("/");
+        console_write(delta_unroute_hex);
+        console_write("/");
+        console_write(delta_total_hex);
+        console_write(" verify-fail-mask=");
+        console_write(verify_failure_hex);
         console_write("\n");
         return;
     }
@@ -162,34 +702,9 @@ static void handle_serial_runtime_command(const char *command) {
 
         uint64_t input_enqueued = 0;
         uint64_t command_enqueued = 0;
-        for (uint64_t i = 0; i < count; i++) {
-            if (inject_input) {
-                runtime_message input_msg = {};
-                input_msg.category = runtime_message_category::input;
-                input_msg.target = runtime_message_target::compositor_input;
-                input_msg.target_id = runtime_message_target_id::compositor_primary;
-                input_msg.input_event.source = runtime_input_source::serial;
-                input_msg.input_event.message.type = input_message_type::key_char;
-                input_msg.input_event.message.value = 'a';
-                input_msg.input_event.message.source = input_message_source::keyboard_irq;
-                input_msg.input_event.message.tick = timer_ticks();
-                input_msg.input_event.message.sequence = i;
-                if (runtime_message_router_enqueue(input_msg)) {
-                    input_enqueued++;
-                }
-            }
-            if (inject_command) {
-                runtime_message command_msg = {};
-                command_msg.category = runtime_message_category::command;
-                command_msg.target = runtime_message_target::runtime_command;
-                command_msg.target_id = runtime_message_target_id::runtime_command_primary;
-                if (runtime_message_router_enqueue(command_msg)) {
-                    command_enqueued++;
-                }
-            }
-        }
-
-        g_runtime_router_dequeue_pause_until_tick = timer_ticks() + 300;
+        inject_runtime_message_router_backlog(
+            count, inject_input, inject_command, &input_enqueued, &command_enqueued);
+        g_runtime_router_dequeue_pause_until_tick = timer_ticks() + g_runtime_backlog_test_pause_ticks;
         char requested_hex[19];
         char input_enqueued_hex[19];
         char command_enqueued_hex[19];

@@ -14,6 +14,8 @@ volatile uint64_t g_dirty_pages_trigger = 2;
 volatile uint64_t g_ap_deferred_job_total = 0;
 volatile uint64_t g_ap_deferred_job_by_cpu[kMaxCpus] = {};
 volatile uint64_t g_storage_processed_events_total = 0;
+volatile uint64_t g_storage_processed_irq_events_total = 0;
+volatile uint64_t g_storage_processed_injected_events_total = 0;
 volatile uint64_t g_storage_batches_total = 0;
 volatile uint64_t g_storage_irq_total = 0;
 volatile uint64_t g_storage_irq_drop_total = 0;
@@ -48,6 +50,7 @@ volatile uint64_t g_fs_virtio_9p_read_attempt_total = 0;
 volatile uint64_t g_fs_virtio_9p_read_success_total = 0;
 volatile uint32_t g_storage_head_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_storage_tail_by_cpu[kMaxCpus] = {};
+volatile uint32_t g_storage_queue_high_water_by_cpu[kMaxCpus] = {};
 filesystem_sector_reader_t g_sector_reader = 0;
 
 struct storage_event {
@@ -1659,6 +1662,11 @@ bool enqueue_storage_event(uint64_t cpu_index, uint8_t source) {
     }
     g_storage_queue_by_cpu[cpu_index][tail].source = source;
     __atomic_store_n(&g_storage_tail_by_cpu[cpu_index], next_tail, __ATOMIC_RELAXED);
+    const uint32_t depth_after_enqueue = queue_depth_for_cpu(cpu_index);
+    const uint32_t high_water = __atomic_load_n(&g_storage_queue_high_water_by_cpu[cpu_index], __ATOMIC_RELAXED);
+    if (depth_after_enqueue > high_water) {
+        __atomic_store_n(&g_storage_queue_high_water_by_cpu[cpu_index], depth_after_enqueue, __ATOMIC_RELAXED);
+    }
     return true;
 }
 
@@ -1695,6 +1703,8 @@ bool filesystem_fat32_read_root_file_head(uint8_t source,
 bool filesystem_init(void) {
     __atomic_store_n(&g_ap_deferred_job_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_storage_processed_events_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_storage_processed_irq_events_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_storage_processed_injected_events_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_storage_batches_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_storage_irq_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_storage_irq_drop_total, 0, __ATOMIC_RELAXED);
@@ -1734,6 +1744,7 @@ bool filesystem_init(void) {
         __atomic_store_n(&g_ap_deferred_job_by_cpu[i], 0, __ATOMIC_RELAXED);
         __atomic_store_n(&g_storage_head_by_cpu[i], 0, __ATOMIC_RELAXED);
         __atomic_store_n(&g_storage_tail_by_cpu[i], 0, __ATOMIC_RELAXED);
+        __atomic_store_n(&g_storage_queue_high_water_by_cpu[i], 0, __ATOMIC_RELAXED);
     }
     log_info("filesystem: storage IRQ queue + AP deferred processing ready.");
     log_info("filesystem: FAT16/FAT32/NTFS mount probe scaffold enabled.");
@@ -1806,10 +1817,17 @@ void filesystem_process_ap_deferred_job(uint64_t cpu_index, uint64_t sequence) {
     }
     process_virtio_9p_head_requests_on_worker();
     uint64_t processed = 0;
+    uint64_t processed_irq = 0;
+    uint64_t processed_injected = 0;
     for (uint64_t i = 0; i < kStorageBatchPerApJob; i++) {
         storage_event event = {};
         if (!dequeue_storage_event(cpu_index, &event)) {
             break;
+        }
+        if (event.source == 1) {
+            processed_irq++;
+        } else {
+            processed_injected++;
         }
         process_storage_event(event);
         processed++;
@@ -1818,6 +1836,8 @@ void filesystem_process_ap_deferred_job(uint64_t cpu_index, uint64_t sequence) {
         return;
     }
     __atomic_fetch_add(&g_storage_processed_events_total, processed, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&g_storage_processed_irq_events_total, processed_irq, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&g_storage_processed_injected_events_total, processed_injected, __ATOMIC_RELAXED);
     __atomic_fetch_add(&g_storage_batches_total, 1, __ATOMIC_RELAXED);
     __atomic_fetch_add(&g_ap_deferred_job_total, 1, __ATOMIC_RELAXED);
     __atomic_fetch_add(&g_ap_deferred_job_by_cpu[cpu_index], 1, __ATOMIC_RELAXED);
@@ -1849,8 +1869,35 @@ uint64_t filesystem_queue_depth_for_cpu(uint64_t cpu_index) {
     return static_cast<uint64_t>(queue_depth_for_cpu(cpu_index));
 }
 
+uint64_t filesystem_queue_high_water_for_cpu(uint64_t cpu_index) {
+    if (cpu_index >= kMaxCpus) {
+        return 0;
+    }
+    return static_cast<uint64_t>(__atomic_load_n(&g_storage_queue_high_water_by_cpu[cpu_index], __ATOMIC_RELAXED));
+}
+
+uint64_t filesystem_queue_high_water_total(void) {
+    uint64_t total = smp_total_cpu_count();
+    if (total > kMaxCpus) {
+        total = kMaxCpus;
+    }
+    uint64_t high_water_total = 0;
+    for (uint64_t cpu = 1; cpu < total; cpu++) {
+        high_water_total += static_cast<uint64_t>(__atomic_load_n(&g_storage_queue_high_water_by_cpu[cpu], __ATOMIC_RELAXED));
+    }
+    return high_water_total;
+}
+
 uint64_t filesystem_processed_events_total(void) {
     return __atomic_load_n(&g_storage_processed_events_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_processed_irq_events_total(void) {
+    return __atomic_load_n(&g_storage_processed_irq_events_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_processed_injected_events_total(void) {
+    return __atomic_load_n(&g_storage_processed_injected_events_total, __ATOMIC_RELAXED);
 }
 
 uint64_t filesystem_batches_total(void) {

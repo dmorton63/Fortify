@@ -15,8 +15,9 @@ constexpr uint64_t kHeartbeatLogTicks = 500;
 constexpr uint64_t kSmpHealthSnapshotTicks = 1000;
 constexpr uint64_t kPerCpuDetailLogTicks = 1000;
 constexpr uint64_t kApWorkPendingDebounceIntervals = 2;
-constexpr uint64_t kRuntimeMsgBacklogWarnDepth = 16;
+constexpr uint64_t kRuntimeMsgBacklogWarnDepthDefault = 16;
 constexpr uint64_t kRuntimeMsgBacklogRecoverDepth = 0;
+constexpr uint64_t kRuntimeMsgBacklogTransitionTicksDefault = 25;
 
 uint64_t last_heartbeat_log = 0;
 uint64_t last_ap_wake_total = 0;
@@ -63,7 +64,73 @@ uint64_t last_ap_work_drop_by_cpu[kSmpCounterCap];
 bool smp_kick_observation_logged = false;
 bool runtime_msg_input_backlog_warned = false;
 bool runtime_msg_command_backlog_warned = false;
+uint64_t runtime_msg_input_backlog_warn_since_tick = 0;
+uint64_t runtime_msg_input_backlog_recover_since_tick = 0;
+uint64_t runtime_msg_command_backlog_warn_since_tick = 0;
+uint64_t runtime_msg_command_backlog_recover_since_tick = 0;
+uint64_t runtime_msg_backlog_warn_depth = kRuntimeMsgBacklogWarnDepthDefault;
+uint64_t runtime_msg_backlog_transition_ticks = kRuntimeMsgBacklogTransitionTicksDefault;
+
+void poll_runtime_message_backlog_guardrail(const char *warn_label,
+                                            const char *recover_label,
+                                            uint64_t queue_depth,
+                                            bool *backlog_warned,
+                                            uint64_t *warn_since_tick,
+                                            uint64_t *recover_since_tick,
+                                            uint64_t ticks) {
+    if (queue_depth >= runtime_msg_backlog_warn_depth) {
+        *recover_since_tick = 0;
+        if (!*backlog_warned) {
+            if (*warn_since_tick == 0) {
+                *warn_since_tick = ticks;
+            } else if ((ticks - *warn_since_tick) >= runtime_msg_backlog_transition_ticks) {
+                *backlog_warned = true;
+                *warn_since_tick = 0;
+                log_warn(warn_label);
+            }
+        }
+        return;
+    }
+
+    *warn_since_tick = 0;
+    if (*backlog_warned && queue_depth <= kRuntimeMsgBacklogRecoverDepth) {
+        if (*recover_since_tick == 0) {
+            *recover_since_tick = ticks;
+        } else if ((ticks - *recover_since_tick) >= runtime_msg_backlog_transition_ticks) {
+            *backlog_warned = false;
+            *recover_since_tick = 0;
+            log_info(recover_label);
+        }
+    } else {
+        *recover_since_tick = 0;
+    }
+}
 } // namespace
+
+void kernel_set_runtime_message_backlog_guardrail(uint64_t warn_depth, uint64_t transition_ticks) {
+    if (warn_depth == 0) {
+        warn_depth = 1;
+    }
+    if (transition_ticks == 0) {
+        transition_ticks = 1;
+    }
+    runtime_msg_backlog_warn_depth = warn_depth;
+    runtime_msg_backlog_transition_ticks = transition_ticks;
+    runtime_msg_input_backlog_warned = false;
+    runtime_msg_command_backlog_warned = false;
+    runtime_msg_input_backlog_warn_since_tick = 0;
+    runtime_msg_input_backlog_recover_since_tick = 0;
+    runtime_msg_command_backlog_warn_since_tick = 0;
+    runtime_msg_command_backlog_recover_since_tick = 0;
+}
+
+uint64_t kernel_runtime_message_backlog_warn_depth(void) {
+    return runtime_msg_backlog_warn_depth;
+}
+
+uint64_t kernel_runtime_message_backlog_transition_ticks(void) {
+    return runtime_msg_backlog_transition_ticks;
+}
 
 void kernel_idle_poll_smp_observability(uint64_t ticks) {
     kernel_idle_ap_poll_result ap_poll = {};
@@ -134,24 +201,22 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
         runtime_message_router_enqueued_total_for_target(runtime_message_target::runtime_command);
     const uint64_t runtime_msg_command_queue_dequeued =
         runtime_message_router_dequeued_total_for_target(runtime_message_target::runtime_command);
-    if (!runtime_msg_input_backlog_warned &&
-        runtime_msg_input_queue_depth >= kRuntimeMsgBacklogWarnDepth) {
-        runtime_msg_input_backlog_warned = true;
-        log_warn("smp: runtime message router input queue backlog warning.");
-    } else if (runtime_msg_input_backlog_warned &&
-               runtime_msg_input_queue_depth <= kRuntimeMsgBacklogRecoverDepth) {
-        runtime_msg_input_backlog_warned = false;
-        log_info("smp: runtime message router input queue backlog recovered.");
-    }
-    if (!runtime_msg_command_backlog_warned &&
-        runtime_msg_command_queue_depth >= kRuntimeMsgBacklogWarnDepth) {
-        runtime_msg_command_backlog_warned = true;
-        log_warn("smp: runtime message router command queue backlog warning.");
-    } else if (runtime_msg_command_backlog_warned &&
-               runtime_msg_command_queue_depth <= kRuntimeMsgBacklogRecoverDepth) {
-        runtime_msg_command_backlog_warned = false;
-        log_info("smp: runtime message router command queue backlog recovered.");
-    }
+    poll_runtime_message_backlog_guardrail(
+        "smp: runtime message router input queue backlog warning.",
+        "smp: runtime message router input queue backlog recovered.",
+        runtime_msg_input_queue_depth,
+        &runtime_msg_input_backlog_warned,
+        &runtime_msg_input_backlog_warn_since_tick,
+        &runtime_msg_input_backlog_recover_since_tick,
+        ticks);
+    poll_runtime_message_backlog_guardrail(
+        "smp: runtime message router command queue backlog warning.",
+        "smp: runtime message router command queue backlog recovered.",
+        runtime_msg_command_queue_depth,
+        &runtime_msg_command_backlog_warned,
+        &runtime_msg_command_backlog_warn_since_tick,
+        &runtime_msg_command_backlog_recover_since_tick,
+        ticks);
     const bool log_detailed_counters =
         !self_test_logged ||
         !last_ap_work_pass ||
@@ -455,7 +520,9 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
     for (uint64_t cpu = 1; cpu <= migration_expected_ap; cpu++) {
         expected_ap_cpu_mask |= (1ULL << cpu);
     }
-    bool migration_pass = false;
+    const bool migration_gate_active =
+        (ap_pinned_active_total != 0) || scheduler_ap_pinned_task_migration_enabled();
+    bool migration_pass = !migration_gate_active;
     if (ap_pinned_active_total != 0 && expected_ap_cpu_mask != 0) {
         const bool mask_covered =
             (ap_pinned_seen_cpu_mask_total & expected_ap_cpu_mask) == expected_ap_cpu_mask;
@@ -464,8 +531,8 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
         migration_pass = mask_covered && migrations_observed;
     }
     const bool migration_pass_for_logs = migration_pass || last_migration_pass;
-    const bool migration_gate_active =
-        (ap_pinned_active_total != 0) || scheduler_ap_pinned_task_migration_enabled();
+    const uint64_t migration_expected_mask_for_logs =
+        migration_gate_active ? expected_ap_cpu_mask : 0;
     const bool self_test_pass_for_logs =
         ap_work_pass_for_logs && (!migration_gate_active || migration_pass_for_logs);
     const bool can_emit_initial_self_test = self_test_logged || (ap_work_execute_total != 0);
@@ -480,7 +547,7 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
                                             ap_pinned_active_total,
                                             ap_pinned_migrations_total,
                                             ap_pinned_seen_cpu_mask_total,
-                                            expected_ap_cpu_mask);
+                                            migration_expected_mask_for_logs);
         log_smp_ap_work_kinds_summary(ap_maintenance_execute_total,
                                       ap_networking_execute_total,
                                       port_ap_job_total,

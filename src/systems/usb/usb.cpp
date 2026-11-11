@@ -13,15 +13,21 @@ struct usb_event {
     uint8_t source;
 };
 
+constexpr uint8_t kUsbEventSourceIrq = 1;
+constexpr uint8_t kUsbEventSourceInject = 2;
+
 volatile uint64_t g_usb_host_irq_total = 0;
 volatile uint64_t g_usb_host_irq_drop_total = 0;
 volatile uint64_t g_usb_ap_deferred_job_total = 0;
 volatile uint64_t g_usb_ap_deferred_job_by_cpu[kMaxCpus] = {};
 volatile uint64_t g_usb_processed_events_total = 0;
+volatile uint64_t g_usb_processed_irq_events_total = 0;
+volatile uint64_t g_usb_processed_injected_events_total = 0;
 volatile uint64_t g_usb_batches_total = 0;
 volatile uint64_t g_next_target_ap = 1;
 volatile uint32_t g_usb_head_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_usb_tail_by_cpu[kMaxCpus] = {};
+volatile uint64_t g_usb_queue_high_water_by_cpu[kMaxCpus] = {};
 usb_event g_usb_queue_by_cpu[kMaxCpus][kUsbQueueCapacity] = {};
 
 bool pick_target_ap(uint64_t *out_cpu) {
@@ -66,6 +72,16 @@ bool enqueue_usb_event(uint64_t cpu_index, uint8_t source) {
     }
     g_usb_queue_by_cpu[cpu_index][tail].source = source;
     __atomic_store_n(&g_usb_tail_by_cpu[cpu_index], next_tail, __ATOMIC_RELAXED);
+    const uint64_t depth = static_cast<uint64_t>(queue_depth_for_cpu(cpu_index));
+    uint64_t high_water = __atomic_load_n(&g_usb_queue_high_water_by_cpu[cpu_index], __ATOMIC_RELAXED);
+    while (depth > high_water &&
+           !__atomic_compare_exchange_n(&g_usb_queue_high_water_by_cpu[cpu_index],
+                                        &high_water,
+                                        depth,
+                                        false,
+                                        __ATOMIC_RELAXED,
+                                        __ATOMIC_RELAXED)) {
+    }
     return true;
 }
 
@@ -89,12 +105,15 @@ bool usb_init(void) {
     __atomic_store_n(&g_usb_host_irq_drop_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_usb_ap_deferred_job_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_usb_processed_events_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_usb_processed_irq_events_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_usb_processed_injected_events_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_usb_batches_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_next_target_ap, 1, __ATOMIC_RELAXED);
     for (uint64_t i = 0; i < kMaxCpus; i++) {
         __atomic_store_n(&g_usb_ap_deferred_job_by_cpu[i], 0, __ATOMIC_RELAXED);
         __atomic_store_n(&g_usb_head_by_cpu[i], 0, __ATOMIC_RELAXED);
         __atomic_store_n(&g_usb_tail_by_cpu[i], 0, __ATOMIC_RELAXED);
+        __atomic_store_n(&g_usb_queue_high_water_by_cpu[i], 0, __ATOMIC_RELAXED);
     }
     log_info("usb: host IRQ queue + AP deferred processing ready.");
     return true;
@@ -103,7 +122,7 @@ bool usb_init(void) {
 void usb_on_host_irq(void) {
     __atomic_fetch_add(&g_usb_host_irq_total, 1, __ATOMIC_RELAXED);
     uint64_t target_cpu = 0;
-    if (!pick_target_ap(&target_cpu) || !enqueue_usb_event(target_cpu, 1)) {
+    if (!pick_target_ap(&target_cpu) || !enqueue_usb_event(target_cpu, kUsbEventSourceIrq)) {
         __atomic_fetch_add(&g_usb_host_irq_drop_total, 1, __ATOMIC_RELAXED);
     }
 }
@@ -113,7 +132,7 @@ uint64_t usb_inject_events(uint64_t count) {
     for (uint64_t i = 0; i < count; i++) {
         __atomic_fetch_add(&g_usb_host_irq_total, 1, __ATOMIC_RELAXED);
         uint64_t target_cpu = 0;
-        if (!pick_target_ap(&target_cpu) || !enqueue_usb_event(target_cpu, 2)) {
+        if (!pick_target_ap(&target_cpu) || !enqueue_usb_event(target_cpu, kUsbEventSourceInject)) {
             __atomic_fetch_add(&g_usb_host_irq_drop_total, 1, __ATOMIC_RELAXED);
             continue;
         }
@@ -152,18 +171,26 @@ void usb_process_ap_deferred_job(uint64_t cpu_index, uint64_t sequence) {
         return;
     }
     uint64_t processed = 0;
+    uint64_t processed_irq = 0;
+    uint64_t processed_injected = 0;
     for (uint64_t i = 0; i < kUsbBatchPerApJob; i++) {
         usb_event event = {};
         if (!dequeue_usb_event(cpu_index, &event)) {
             break;
         }
-        (void)event.source;
+        if (event.source == kUsbEventSourceIrq) {
+            processed_irq++;
+        } else if (event.source == kUsbEventSourceInject) {
+            processed_injected++;
+        }
         processed++;
     }
     if (processed == 0) {
         return;
     }
     __atomic_fetch_add(&g_usb_processed_events_total, processed, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&g_usb_processed_irq_events_total, processed_irq, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&g_usb_processed_injected_events_total, processed_injected, __ATOMIC_RELAXED);
     __atomic_fetch_add(&g_usb_batches_total, 1, __ATOMIC_RELAXED);
     __atomic_fetch_add(&g_usb_ap_deferred_job_total, 1, __ATOMIC_RELAXED);
     __atomic_fetch_add(&g_usb_ap_deferred_job_by_cpu[cpu_index], 1, __ATOMIC_RELAXED);
@@ -192,6 +219,14 @@ uint64_t usb_processed_events_total(void) {
     return __atomic_load_n(&g_usb_processed_events_total, __ATOMIC_RELAXED);
 }
 
+uint64_t usb_processed_irq_events_total(void) {
+    return __atomic_load_n(&g_usb_processed_irq_events_total, __ATOMIC_RELAXED);
+}
+
+uint64_t usb_processed_injected_events_total(void) {
+    return __atomic_load_n(&g_usb_processed_injected_events_total, __ATOMIC_RELAXED);
+}
+
 uint64_t usb_batches_total(void) {
     return __atomic_load_n(&g_usb_batches_total, __ATOMIC_RELAXED);
 }
@@ -201,4 +236,21 @@ uint64_t usb_queue_depth_for_cpu(uint64_t cpu_index) {
         return 0;
     }
     return static_cast<uint64_t>(queue_depth_for_cpu(cpu_index));
+}
+
+uint64_t usb_queue_high_water_for_cpu(uint64_t cpu_index) {
+    if (cpu_index >= kMaxCpus) {
+        return 0;
+    }
+    return __atomic_load_n(&g_usb_queue_high_water_by_cpu[cpu_index], __ATOMIC_RELAXED);
+}
+
+uint64_t usb_queue_high_water_total(void) {
+    const uint64_t total = smp_total_cpu_count();
+    const uint64_t limit = (total < kMaxCpus) ? total : kMaxCpus;
+    uint64_t high_water = 0;
+    for (uint64_t cpu = 1; cpu < limit; cpu++) {
+        high_water += __atomic_load_n(&g_usb_queue_high_water_by_cpu[cpu], __ATOMIC_RELAXED);
+    }
+    return high_water;
 }

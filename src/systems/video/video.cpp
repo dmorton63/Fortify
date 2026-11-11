@@ -825,58 +825,64 @@ void draw_panel(uint64_t tick) {
     draw_line(panel_x, panel_y, panel_x, panel_y + panel_h - 1, compose_rgb(64, 110, 220));
     draw_line(panel_x + panel_w - 1, panel_y, panel_x + panel_w - 1, panel_y + panel_h - 1, compose_rgb(64, 110, 220));
 
-    const uint64_t phase_base = phase_base_for_tick(tick);
-    const int32_t sin_y = tri_wave_q15(phase_base);
-    const int32_t cos_y = tri_wave_q15(phase_base + 64);
-    const int32_t sin_x = tri_wave_q15((phase_base * 3) / 2 + 19);
-    const int32_t cos_x = tri_wave_q15((phase_base * 3) / 2 + 83);
-
-    point2 projected[8];
-    int32_t depth[8];
-    const int32_t cx = panel_x + panel_w / 2;
-    const int32_t cy = panel_y + panel_h / 2 + 10;
-    const int32_t focal = panel_h / 2;
-    for (uint64_t i = 0; i < 8; i++) {
-        rotate_project_vertex(kCubeVertices[i], sin_y, cos_y, sin_x, cos_x, focal, cx, cy, &projected[i], &depth[i]);
-    }
-
-    sort_face order[12];
-    for (uint64_t i = 0; i < 12; i++) {
-        const face &f = kCubeFaces[i];
-        order[i].face_index = static_cast<uint8_t>(i);
-        order[i].depth = (depth[f.i0] + depth[f.i1] + depth[f.i2]) / 3;
-    }
-    for (uint64_t i = 1; i < 12; i++) {
-        sort_face key = order[i];
-        int64_t j = static_cast<int64_t>(i) - 1;
-        while (j >= 0 && order[j].depth > key.depth) {
-            order[j + 1] = order[j];
-            j--;
-        }
-        order[j + 1] = key;
-    }
-
     const uint64_t active_style = easter_mode ? kStyleBoth : g_render_style;
-    const bool draw_solid = (active_style == kStyleSolid || active_style == kStyleBoth);
-    const bool draw_wire = (active_style == kStyleWire || active_style == kStyleBoth);
-    for (int64_t i = 11; i >= 0; i--) {
-        const face &f = kCubeFaces[order[i].face_index];
-        const point2 &a = projected[f.i0];
-        const point2 &b = projected[f.i1];
-        const point2 &c = projected[f.i2];
-        const int64_t cross = static_cast<int64_t>(b.x - a.x) * static_cast<int64_t>(c.y - a.y) -
-                              static_cast<int64_t>(b.y - a.y) * static_cast<int64_t>(c.x - a.x);
-        if (cross <= 0) {
-            continue;
+    if (g_demo_enabled) {
+        const uint64_t phase_base = phase_base_for_tick(tick);
+        const int32_t sin_y = tri_wave_q15(phase_base);
+        const int32_t cos_y = tri_wave_q15(phase_base + 64);
+        const int32_t sin_x = tri_wave_q15((phase_base * 3) / 2 + 19);
+        const int32_t cos_x = tri_wave_q15((phase_base * 3) / 2 + 83);
+
+        point2 projected[8];
+        int32_t depth[8];
+        const int32_t cx = panel_x + panel_w / 2;
+        const int32_t cy = panel_y + panel_h / 2 + 10;
+        const int32_t focal = panel_h / 2;
+        for (uint64_t i = 0; i < 8; i++) {
+            rotate_project_vertex(kCubeVertices[i], sin_y, cos_y, sin_x, cos_x, focal, cx, cy, &projected[i], &depth[i]);
         }
-        if (draw_solid) {
-            fill_triangle(a, b, c, compose_rgb(f.color_r, f.color_g, f.color_b));
+
+        sort_face order[12];
+        for (uint64_t i = 0; i < 12; i++) {
+            const face &f = kCubeFaces[i];
+            order[i].face_index = static_cast<uint8_t>(i);
+            order[i].depth = (depth[f.i0] + depth[f.i1] + depth[f.i2]) / 3;
         }
-        if (draw_wire) {
-            draw_line(a.x, a.y, b.x, b.y, wire);
-            draw_line(b.x, b.y, c.x, c.y, wire);
-            draw_line(c.x, c.y, a.x, a.y, wire);
+        for (uint64_t i = 1; i < 12; i++) {
+            sort_face key = order[i];
+            int64_t j = static_cast<int64_t>(i) - 1;
+            while (j >= 0 && order[j].depth > key.depth) {
+                order[j + 1] = order[j];
+                j--;
+            }
+            order[j + 1] = key;
         }
+
+        const bool draw_solid = (active_style == kStyleSolid || active_style == kStyleBoth);
+        const bool draw_wire = (active_style == kStyleWire || active_style == kStyleBoth);
+        for (int64_t i = 11; i >= 0; i--) {
+            const face &f = kCubeFaces[order[i].face_index];
+            const point2 &a = projected[f.i0];
+            const point2 &b = projected[f.i1];
+            const point2 &c = projected[f.i2];
+            const int64_t cross = static_cast<int64_t>(b.x - a.x) * static_cast<int64_t>(c.y - a.y) -
+                                  static_cast<int64_t>(b.y - a.y) * static_cast<int64_t>(c.x - a.x);
+            if (cross <= 0) {
+                continue;
+            }
+            if (draw_solid) {
+                fill_triangle(a, b, c, compose_rgb(f.color_r, f.color_g, f.color_b));
+            }
+            if (draw_wire) {
+                draw_line(a.x, a.y, b.x, b.y, wire);
+                draw_line(b.x, b.y, c.x, c.y, wire);
+                draw_line(c.x, c.y, a.x, a.y, wire);
+            }
+        }
+    } else {
+        draw_text(panel_x + 24, panel_y + 48, "3D DEMO PAUSED", compose_rgb(176, 206, 248), compose_rgb(8, 12, 22));
+        draw_text(panel_x + 24, panel_y + 48 + static_cast<int32_t>(kGlyphH * g_text_scale),
+                  "INPUT/COMMAND SURFACES ACTIVE", compose_rgb(136, 178, 236), compose_rgb(8, 12, 22));
     }
 
     const int32_t hud_x = panel_x + 12;
@@ -885,7 +891,7 @@ void draw_panel(uint64_t tick) {
     const int32_t line_h = static_cast<int32_t>(kGlyphH * g_text_scale);
     const int32_t hud_h = 10 + (line_h * (easter_mode ? 5 : 4));
     fill_rect(hud_x, hud_y, hud_w, hud_h, compose_rgb(4, 8, 18));
-    draw_text(hud_x + 6, hud_y + 4, "FORTIFY VIDEO 3D DEMO", fg, compose_rgb(4, 8, 18));
+    draw_text(hud_x + 6, hud_y + 4, g_demo_enabled ? "FORTIFY VIDEO 3D DEMO" : "FORTIFY VIDEO DEMO OFF", fg, compose_rgb(4, 8, 18));
     if (active_style == kStyleSolid) {
         draw_text(hud_x + 6, hud_y + 4 + line_h, "STYLE SOLID", fg, compose_rgb(4, 8, 18));
     } else if (active_style == kStyleWire) {
@@ -1022,21 +1028,25 @@ bool compositor_init(void) {
 }
 
 void video_render_tick(uint64_t tick) {
-    if (!g_video_ready || !g_demo_enabled) {
+    if (!g_video_ready) {
         return;
     }
     if (g_last_render_tick != 0 && (tick - g_last_render_tick) < kRenderTickStride) {
         return;
     }
-    if (g_fps_window_start_tick == 0) {
-        g_fps_window_start_tick = tick;
-    }
-    g_fps_frames_in_window++;
-    const uint64_t fps_elapsed = tick - g_fps_window_start_tick;
-    if (fps_elapsed >= 100) {
-        g_fps_display = (g_fps_frames_in_window * 100 + (fps_elapsed / 2)) / fps_elapsed;
-        g_fps_window_start_tick = tick;
-        g_fps_frames_in_window = 0;
+    if (g_demo_enabled) {
+        if (g_fps_window_start_tick == 0) {
+            g_fps_window_start_tick = tick;
+        }
+        g_fps_frames_in_window++;
+        const uint64_t fps_elapsed = tick - g_fps_window_start_tick;
+        if (fps_elapsed >= 100) {
+            g_fps_display = (g_fps_frames_in_window * 100 + (fps_elapsed / 2)) / fps_elapsed;
+            g_fps_window_start_tick = tick;
+            g_fps_frames_in_window = 0;
+        }
+    } else {
+        g_fps_display = 0;
     }
     g_last_render_tick = tick;
     draw_panel(tick);

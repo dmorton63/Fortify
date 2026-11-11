@@ -249,19 +249,34 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `ap-task-stop` (disable AP-pinned runnable demo tasks)
 - `ap-task-migrate` (show migration toggle state)
 - `ap-task-migrate 1` / `ap-task-migrate 0` (enable/disable AP-pinned task migration)
-- `video-demo` / `video-demo 1|0` (show/enable/disable animated software 3D panel)
+- `video-demo` / `video-demo 1|0` (show/enable/disable animated software 3D panel; when disabled, compositor input/command surfaces remain active and continue updating)
 - `video-style` / `video-style 0|1|2` (solid / wireframe / combined)
 - `video-speed` / `video-speed <1..32>` (frame-time aware rotation speed control)
 - `video-font` / `video-font 0|1|2` (text style: mono / bold / shadow)
 - `video-text-scale` / `video-text-scale <1..4>` (HUD text scale control)
 - `input-kbd` / `input-kbd 0|1` (show/disable/enable PS/2 keyboard event routing into command input; default `1`)
 - `net-rx-inject <count>` (inject synthetic NIC RX events to exercise networking AP batch path)
+- `net-rx-stats` (print compact networking RX AP pipeline telemetry: queue depth/high-water, IRQ/drop, processed totals split by IRQ vs injected source, and batch/job totals)
+- `net-rx-smoke [count]` (inject synthetic networking RX events and emit a one-line pass/fail summary with requested/injected plus immediate IRQ/drop/processed deltas and queue depth; default count `32`)
+- `net-rx-smoke-wait [count] [timeout-ticks]` (inject synthetic networking RX events, wait for AP queue drain up to timeout, and emit a one-line pass/fail summary with drain status; defaults: count `32`, timeout `600` ticks)
 - `web-head <target> [max-bytes]` (queue an async web head request; max defaults to 256, caps at 4096)
 - `web-head-status <request-id>` (check queued web request status: pending/running/done-ok/done-err with bytes/checksum)
 - `usb-inject <count>` (inject synthetic USB host events)
+- `usb-stats` (print compact USB AP pipeline telemetry: queue depth/high-water, IRQ/drop, processed totals split by IRQ vs injected source, and batch/job totals)
+- `usb-smoke [count]` (inject synthetic USB events and emit a one-line pass/fail summary with requested/injected plus immediate IRQ/drop/processed deltas and queue depth; default count `32`)
+- `usb-smoke-wait [count] [timeout-ticks]` (inject synthetic USB events, wait for AP queue drain up to timeout, and emit a one-line pass/fail summary with drain status; defaults: count `32`, timeout `600` ticks)
 - `storage-inject <count>` (inject synthetic storage completion events)
+- `storage-stats` (print compact storage AP pipeline telemetry: queue depth/high-water, IRQ/drop, processed totals split by IRQ vs injected source, and batch/job totals)
+- `storage-smoke [count]` (inject synthetic storage events and emit a one-line pass/fail summary with requested/injected plus immediate IRQ/drop/processed deltas and queue depth; default count `32`)
+- `storage-smoke-wait [count] [timeout-ticks]` (inject synthetic storage events, wait for AP queue drain up to timeout, and emit a one-line pass/fail summary with drain status; defaults: count `32`, timeout `600` ticks)
 - `audio-inject <count>` (inject synthetic audio buffer events)
+- `audio-stats` (print compact audio AP pipeline telemetry: queue depth/high-water, IRQ/drop, processed totals split by IRQ vs injected source, and batch/job totals)
+- `audio-smoke [count]` (inject synthetic audio events and emit a one-line pass/fail summary with requested/injected plus immediate IRQ/drop/processed deltas and queue depth; default count `32`)
+- `audio-smoke-wait [count] [timeout-ticks]` (inject synthetic audio events, wait for AP queue drain up to timeout, and emit a one-line pass/fail summary with drain status; defaults: count `32`, timeout `600` ticks)
 - `webcam-inject <count>` (inject synthetic webcam frame events)
+- `webcam-stats` (print compact webcam AP pipeline telemetry: queue depth/high-water, frame/drop, processed totals split by IRQ vs injected source, and batch/job totals)
+- `webcam-smoke [count]` (inject synthetic webcam events and emit a one-line pass/fail summary with requested/injected plus immediate frame/drop/processed deltas and queue depth; default count `32`)
+- `webcam-smoke-wait [count] [timeout-ticks]` (inject synthetic webcam events, wait for AP queue drain up to timeout, and emit a one-line pass/fail summary with drain status; defaults: count `32`, timeout `600` ticks)
 - `inject-all <count>` (inject the same count into network/USB/storage/audio/webcam in one command)
 - `fs-root-ls [source]` (list FAT32 root entries from source `1` by default; optional source `0..255`)
 - `fs-root-head <name.EXT> [source]` (read up to 256 bytes from a FAT32 root file head and log byte count/checksum)
@@ -270,8 +285,14 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `fs-9p-head-status <request-id>` (check queued virtio-9p request status: pending/running/done-ok/done-err with bytes/checksum)
 - `surface-create <type> <title>` (create a compositor-owned surface; type: `desktop|application|document|workspace|dashboard|tool`; title is a single token, use `_` for spaces)
 - `surface-ls` (list compositor surfaces with id/type/state/layer/position/size/title)
+- `rmsg-profile [balanced|stress|quiet]` (show/set runtime-message router test profile: backlog warning depth/debounce, backlog-test pause ticks, and smoke-extended backlog count)
+- `rmsg-stats` (print a compact runtime-message router snapshot: queue depth/high-water/drop, aggregate flow, drop reasons, and per-target queue/flow)
+- `rmsg-verify` (run router counter consistency checks and report `pass|fail` with a failure-bitmask)
 - `rmsg-drop-test <src|kbd|unroute>` (inject a synthetic router route-drop reason for telemetry validation: invalid source, keyboard-suppressed, or unroutable target)
 - `rmsg-selftest` (run all route-drop probes and assert expected telemetry deltas; reports `pass|fail` plus `delta(src/kbd/unroute/total)`)
+- `rmsg-reset-stats` (reset runtime-message router counters/high-water to a clean baseline; blocked while router queue depth is non-zero)
+- `rmsg-smoke` (run a compact router smoke sequence: `rmsg-reset-stats` + `rmsg-selftest`, then report a single pass/fail summary line)
+- `rmsg-smoke-extended` (run `rmsg-reset-stats` + `rmsg-selftest` + profile-sized backlog injection and report one pass/fail summary line)
 - `rmsg-backlog-test <count> [input|cmd|both]` (inject synthetic runtime-message backlog and briefly pause dequeue to exercise router backlog warning/recovery logs; count `1..1024`, mode defaults to `both`)
   - compositor bootstraps `Desktop Surface`, `Workspace Surface`, `Input Surface`, and `Command Center` by default.
   - input is routed through a compositor event handler; keyboard events target the focused surface (defaults to `Input Surface`).
@@ -283,16 +304,94 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 
 Runtime-message router validation quick checks:
 
+- `rmsg-profile [balanced|stress|quiet]`
+  - expected immediate log: current or set `warn-depth/transition/pause/smoke` knobs
+  - presets: `balanced` (`16/25/300/16`), `stress` (`8/10/450/64`), `quiet` (`32/50/200/16`)
+- `rmsg-stats`
+  - expected immediate log: one compact `rmsg-stats` line with aggregate + per-target router counters
+  - expected use: quick verification between tests without full `ap-stats` output
+- `rmsg-verify`
+  - expected immediate log: `pass fail-mask=0x0`
+  - expected behavior: validates aggregate-vs-target queue/drop/flow parity and route-drop reason totals
 - `rmsg-drop-test src|kbd|unroute`
   - expected immediate log: `injected=<mode>`
   - expected counter delta: `rmsg-drop-reason(<mode>) += 1` and `rmsg(in/cmd/drop).drop += 1`
 - `rmsg-selftest`
   - expected immediate log: `pass delta(src/kbd/unroute/total)=.../1/1/1/3`
   - expected counter delta: `rmsg-drop-reason(src/kbd/unroute) += 1/1/1` and route-drop total `+= 3`
+- `rmsg-reset-stats`
+  - expected immediate log: `reset=ok` (or `reset=blocked pending-depth=<n>` while router messages are still queued)
+  - expected counter baseline after success: router queue/drop/flow and route-drop reason counters restart from zero
+- `rmsg-smoke`
+  - expected immediate log: `pass reset=ok selftest=pass delta(src/kbd/unroute/total)=.../1/1/1/3`
+  - expected behavior: one-line health check; fails if reset is blocked or selftest deltas diverge
+- `rmsg-smoke-extended`
+  - expected immediate log: `pass reset=ok selftest=pass backlog(request/enq input/cmd)=.../.../... delta(src/kbd/unroute/total)=.../1/1/1/3 verify-fail-mask=0x0`
+  - expected behavior: one-line reset+selftest+backlog+consistency sanity check using current profile knobs (backlog input payload is synthetic/inert and does not type into `Input Surface`)
 - `rmsg-backlog-test <count> [input|cmd|both]`
   - expected immediate log: `requested=<count> enqueued(input/cmd)=<x>/<y>`
-  - expected transient logs: `runtime message router <input|command> queue backlog warning`, then matching `... backlog recovered`
+  - expected transient logs (debounced ~25 ticks each transition): `runtime message router <input|command> queue backlog warning`, then matching `... backlog recovered`
   - expected counter behavior after drain: `rmsg-target-q(in/cmd)=0/0`, `rmsg-target-hwm(in/cmd)` increased, and no new drops in `rmsg-target-drop(in/cmd)` unless queue capacity is exceeded
+
+USB vertical-slice quick checks:
+
+- `usb-smoke [count]`
+  - expected immediate log: `pass requested/injected=.../... delta(irq/drop/processed)=.../.../... queue-depth=...`
+  - expected behavior: `injected == requested`, IRQ delta matches request, and queue depth may rise transiently until AP jobs drain it
+- `usb-smoke-wait [count] [timeout-ticks]`
+  - expected immediate log: `pass requested/injected=.../... delta(irq/drop/processed)=.../.../... drained=1 queue-depth=0 timeout=...`
+  - expected behavior: same as `usb-smoke`, plus explicit queue drain confirmation before reporting pass; command actively services USB deferred jobs while waiting
+- `usb-stats`
+  - expected immediate log: one compact USB line with queue depth/high-water, IRQ/drop, processed(total/irq/inject), and batch/job counters
+  - expected behavior after drain: queue depth returns to `0`, processed totals advance, and drop remains `0` unless queue capacity is exceeded
+
+Storage vertical-slice quick checks:
+
+- `storage-smoke [count]`
+  - expected immediate log: `pass requested/injected=.../... delta(irq/drop/processed)=.../.../... queue-depth=...`
+  - expected behavior: `injected == requested`, IRQ delta matches request, and queue depth may rise transiently until AP jobs drain it
+- `storage-smoke-wait [count] [timeout-ticks]`
+  - expected immediate log: `pass requested/injected=.../... delta(irq/drop/processed)=.../.../... drained=1 queue-depth=0 timeout=...`
+  - expected behavior: same as `storage-smoke`, plus explicit queue drain confirmation before reporting pass; command actively services storage deferred jobs while waiting
+- `storage-stats`
+  - expected immediate log: one compact storage line with queue depth/high-water, IRQ/drop, processed(total/irq/inject), and batch/job counters
+  - expected behavior after drain: queue depth returns to `0`, processed totals advance, and drop remains `0` unless queue capacity is exceeded
+
+Networking RX vertical-slice quick checks:
+
+- `net-rx-smoke [count]`
+  - expected immediate log: `pass requested/injected=.../... delta(irq/drop/processed)=.../.../... queue-depth=...`
+  - expected behavior: `injected == requested`, IRQ delta matches request, and queue depth may rise transiently until AP jobs drain it
+- `net-rx-smoke-wait [count] [timeout-ticks]`
+  - expected immediate log: `pass requested/injected=.../... delta(irq/drop/processed)=.../.../... drained=1 queue-depth=0 timeout=...`
+  - expected behavior: same as `net-rx-smoke`, plus explicit queue drain confirmation before reporting pass; command actively services networking deferred jobs while waiting
+- `net-rx-stats`
+  - expected immediate log: one compact networking line with queue depth/high-water, IRQ/drop, processed(total/irq/inject), and batch/job counters
+  - expected behavior after drain: queue depth returns to `0`, processed totals advance, and drop remains `0` unless queue capacity is exceeded
+
+Audio vertical-slice quick checks:
+
+- `audio-smoke [count]`
+  - expected immediate log: `pass requested/injected=.../... delta(irq/drop/processed)=.../.../... queue-depth=...`
+  - expected behavior: `injected == requested`, IRQ delta matches request, and queue depth may rise transiently until AP jobs drain it
+- `audio-smoke-wait [count] [timeout-ticks]`
+  - expected immediate log: `pass requested/injected=.../... delta(irq/drop/processed)=.../.../... drained=1 queue-depth=0 timeout=...`
+  - expected behavior: same as `audio-smoke`, plus explicit queue drain confirmation before reporting pass; command actively services audio deferred jobs while waiting
+- `audio-stats`
+  - expected immediate log: one compact audio line with queue depth/high-water, IRQ/drop, processed(total/irq/inject), and batch/job counters
+  - expected behavior after drain: queue depth returns to `0`, processed totals advance, and drop remains `0` unless queue capacity is exceeded
+
+Webcam vertical-slice quick checks:
+
+- `webcam-smoke [count]`
+  - expected immediate log: `pass requested/injected=.../... delta(frame/drop/processed)=.../.../... queue-depth=...`
+  - expected behavior: `injected == requested`, frame delta matches request, and queue depth may rise transiently until AP jobs drain it
+- `webcam-smoke-wait [count] [timeout-ticks]`
+  - expected immediate log: `pass requested/injected=.../... delta(frame/drop/processed)=.../.../... drained=1 queue-depth=0 timeout=...`
+  - expected behavior: same as `webcam-smoke`, plus explicit queue drain confirmation before reporting pass; command actively services webcam deferred jobs while waiting
+- `webcam-stats`
+  - expected immediate log: one compact webcam line with queue depth/high-water, frame/drop, processed(total/irq/inject), and batch/job counters
+  - expected behavior after drain: queue depth returns to `0`, processed totals advance, and drop remains `0` unless queue capacity is exceeded
 
 If interactive serial input is unavailable, use stress mode and watch periodic log lines:
 
@@ -300,13 +399,14 @@ If interactive serial input is unavailable, use stress mode and watch periodic l
 - `smp: ap-work kinds ... subsystem-jobs ports/net/fs/usb=... ap-task=<count>`
 - `networking: AP RX packets cpu=<cpu> count=<count>` and `networking: AP RX batches cpu=<cpu> count=<count>` (per-CPU RX proof)
 - `smp: health ... ap-task(act/exec)=<active>/<executed> mig/mask=<moves>/<cpu-mask> ctx(ap2ap/bsp2ap)=<count>/<count> rmsg(in/cmd/drop)=<count>/<count>/<count> rmsg-drop-reason(src/kbd/unroute)=<count>/<count>/<count> rmsg-hwm=<count> rmsg-target-q(in/cmd)=<depth>/<depth> rmsg-target-hwm(in/cmd)=<hwm>/<hwm> rmsg-target-drop(in/cmd)=<drop>/<drop> rmsg-target-flow(in e/d cmd e/d)=<in-enq>/<in-deq> <cmd-enq>/<cmd-deq> selftest=<pass|pending>`
-- `smp: runtime message router input queue backlog warning|recovered` and `smp: runtime message router command queue backlog warning|recovered` (warn-once guardrail logs for sustained router queue pressure)
+- `smp: runtime message router input queue backlog warning|recovered` and `smp: runtime message router command queue backlog warning|recovered` (debounced guardrail logs for sustained router queue pressure and drain)
 - `smp: self-test migration=pass|pending ...` (compact migration-proof status line)
 
 `smp: health ... selftest=` is now gated by AP work self-test plus migration self-test when
 AP-pinned migration validation is active (migration enabled or AP-pinned tasks running).
 If one or more CPUs come online late, AP self-test/work dispatch now uses the currently online AP set
 instead of stalling behind full CPU-count equality.
+When migration validation is inactive, `smp: self-test migration=` reports `pass` with `expected=0`.
 
 ## Useful Targets
 
@@ -332,6 +432,14 @@ If you prefer scripts directly:
 ```
 
 ## Next Milestones
+
+Validated vertical slices:
+
+- USB observability + smoke (`usb-*`) validated
+- Storage observability + smoke (`storage-*`) validated
+- Networking RX observability + smoke (`net-rx-*`) validated
+- Audio observability + smoke (`audio-*`) validated
+- Webcam observability + smoke (`webcam-*`) validated
 
 1. Wire VMM APIs to real hardware page tables (CR3-backed mappings)
 2. Add robust memmap pointer/probe validation to eliminate PMM fallback path

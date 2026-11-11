@@ -35,6 +35,7 @@ uint64_t runtime_message_router_route_drop_total(void);
 uint64_t runtime_message_router_route_drop_invalid_source_total(void);
 uint64_t runtime_message_router_route_drop_keyboard_suppressed_total(void);
 uint64_t runtime_message_router_route_drop_unroutable_total(void);
+bool runtime_message_router_reset_stats(uint64_t *pending_depth);
 bool runtime_message_router_probe_route_drop(runtime_route_drop_probe probe);
 runtime_route_decision runtime_message_router_route(const runtime_message &message,
                                                     bool suppress_keyboard,

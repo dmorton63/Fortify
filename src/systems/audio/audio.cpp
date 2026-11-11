@@ -15,9 +15,14 @@ struct audio_event {
 volatile uint64_t g_audio_irq_total = 0;
 volatile uint64_t g_audio_irq_drop_total = 0;
 volatile uint64_t g_audio_ap_deferred_job_total = 0;
+volatile uint64_t g_audio_processed_events_total = 0;
+volatile uint64_t g_audio_processed_irq_events_total = 0;
+volatile uint64_t g_audio_processed_injected_events_total = 0;
+volatile uint64_t g_audio_batches_total = 0;
 volatile uint64_t g_next_target_ap = 1;
 volatile uint32_t g_audio_head_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_audio_tail_by_cpu[kMaxCpus] = {};
+volatile uint32_t g_audio_queue_high_water_by_cpu[kMaxCpus] = {};
 audio_event g_audio_queue_by_cpu[kMaxCpus][kAudioQueueCapacity] = {};
 
 bool pick_target_ap(uint64_t *out_cpu) {
@@ -62,6 +67,11 @@ bool enqueue_audio_event(uint64_t cpu_index, uint8_t source) {
     }
     g_audio_queue_by_cpu[cpu_index][tail].source = source;
     __atomic_store_n(&g_audio_tail_by_cpu[cpu_index], next_tail, __ATOMIC_RELAXED);
+    const uint32_t depth_after_enqueue = queue_depth_for_cpu(cpu_index);
+    const uint32_t high_water = __atomic_load_n(&g_audio_queue_high_water_by_cpu[cpu_index], __ATOMIC_RELAXED);
+    if (depth_after_enqueue > high_water) {
+        __atomic_store_n(&g_audio_queue_high_water_by_cpu[cpu_index], depth_after_enqueue, __ATOMIC_RELAXED);
+    }
     return true;
 }
 
@@ -84,10 +94,15 @@ bool audio_init(void) {
     __atomic_store_n(&g_audio_irq_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_audio_irq_drop_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_audio_ap_deferred_job_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_audio_processed_events_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_audio_processed_irq_events_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_audio_processed_injected_events_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_audio_batches_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_next_target_ap, 1, __ATOMIC_RELAXED);
     for (uint64_t i = 0; i < kMaxCpus; i++) {
         __atomic_store_n(&g_audio_head_by_cpu[i], 0, __ATOMIC_RELAXED);
         __atomic_store_n(&g_audio_tail_by_cpu[i], 0, __ATOMIC_RELAXED);
+        __atomic_store_n(&g_audio_queue_high_water_by_cpu[i], 0, __ATOMIC_RELAXED);
     }
     log_info("audio: IRQ queue + AP deferred buffer processing ready.");
     return true;
@@ -145,7 +160,13 @@ void audio_process_ap_deferred_job(uint64_t cpu_index, uint64_t sequence) {
     if (!dequeue_audio_event(cpu_index, &event)) {
         return;
     }
-    (void)event.source;
+    if (event.source == 1) {
+        __atomic_fetch_add(&g_audio_processed_irq_events_total, 1, __ATOMIC_RELAXED);
+    } else {
+        __atomic_fetch_add(&g_audio_processed_injected_events_total, 1, __ATOMIC_RELAXED);
+    }
+    __atomic_fetch_add(&g_audio_processed_events_total, 1, __ATOMIC_RELAXED);
+    __atomic_fetch_add(&g_audio_batches_total, 1, __ATOMIC_RELAXED);
     __atomic_fetch_add(&g_audio_ap_deferred_job_total, 1, __ATOMIC_RELAXED);
 }
 
@@ -166,4 +187,39 @@ uint64_t audio_queue_depth_for_cpu(uint64_t cpu_index) {
         return 0;
     }
     return static_cast<uint64_t>(queue_depth_for_cpu(cpu_index));
+}
+
+uint64_t audio_queue_high_water_for_cpu(uint64_t cpu_index) {
+    if (cpu_index >= kMaxCpus) {
+        return 0;
+    }
+    return static_cast<uint64_t>(__atomic_load_n(&g_audio_queue_high_water_by_cpu[cpu_index], __ATOMIC_RELAXED));
+}
+
+uint64_t audio_queue_high_water_total(void) {
+    uint64_t total = smp_total_cpu_count();
+    if (total > kMaxCpus) {
+        total = kMaxCpus;
+    }
+    uint64_t high_water_total = 0;
+    for (uint64_t cpu = 1; cpu < total; cpu++) {
+        high_water_total += static_cast<uint64_t>(__atomic_load_n(&g_audio_queue_high_water_by_cpu[cpu], __ATOMIC_RELAXED));
+    }
+    return high_water_total;
+}
+
+uint64_t audio_processed_events_total(void) {
+    return __atomic_load_n(&g_audio_processed_events_total, __ATOMIC_RELAXED);
+}
+
+uint64_t audio_processed_irq_events_total(void) {
+    return __atomic_load_n(&g_audio_processed_irq_events_total, __ATOMIC_RELAXED);
+}
+
+uint64_t audio_processed_injected_events_total(void) {
+    return __atomic_load_n(&g_audio_processed_injected_events_total, __ATOMIC_RELAXED);
+}
+
+uint64_t audio_batches_total(void) {
+    return __atomic_load_n(&g_audio_batches_total, __ATOMIC_RELAXED);
 }
