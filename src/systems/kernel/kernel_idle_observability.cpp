@@ -13,7 +13,10 @@ namespace {
 constexpr uint64_t kSmpCounterCap = 64;
 constexpr uint64_t kHeartbeatLogTicks = 500;
 constexpr uint64_t kSmpHealthSnapshotTicks = 1000;
+constexpr uint64_t kSmpQuietHealthSnapshotTicksDefault = 3000;
 constexpr uint64_t kPerCpuDetailLogTicks = 1000;
+constexpr uint64_t kSmpLogProfileDefault = 0;
+constexpr uint64_t kSmpLogProfileQuiet = 1;
 constexpr uint64_t kApWorkPendingDebounceIntervals = 2;
 constexpr uint64_t kRuntimeMsgBacklogWarnDepthDefault = 16;
 constexpr uint64_t kRuntimeMsgBacklogRecoverDepth = 0;
@@ -70,6 +73,8 @@ uint64_t runtime_msg_command_backlog_warn_since_tick = 0;
 uint64_t runtime_msg_command_backlog_recover_since_tick = 0;
 uint64_t runtime_msg_backlog_warn_depth = kRuntimeMsgBacklogWarnDepthDefault;
 uint64_t runtime_msg_backlog_transition_ticks = kRuntimeMsgBacklogTransitionTicksDefault;
+uint64_t smp_log_profile = kSmpLogProfileDefault;
+uint64_t smp_quiet_health_snapshot_ticks = kSmpQuietHealthSnapshotTicksDefault;
 
 void poll_runtime_message_backlog_guardrail(const char *warn_label,
                                             const char *recover_label,
@@ -106,6 +111,25 @@ void poll_runtime_message_backlog_guardrail(const char *warn_label,
     }
 }
 } // namespace
+
+void kernel_set_smp_log_profile(uint64_t profile) {
+    if (profile != kSmpLogProfileDefault && profile != kSmpLogProfileQuiet) {
+        profile = kSmpLogProfileDefault;
+    }
+    smp_log_profile = profile;
+}
+
+uint64_t kernel_smp_log_profile(void) {
+    return smp_log_profile;
+}
+
+void kernel_set_smp_quiet_health_snapshot_ticks(uint64_t ticks) {
+    smp_quiet_health_snapshot_ticks = ticks;
+}
+
+uint64_t kernel_smp_quiet_health_snapshot_ticks(void) {
+    return smp_quiet_health_snapshot_ticks;
+}
 
 void kernel_set_runtime_message_backlog_guardrail(uint64_t warn_depth, uint64_t transition_ticks) {
     if (warn_depth == 0) {
@@ -217,10 +241,12 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
         &runtime_msg_command_backlog_warn_since_tick,
         &runtime_msg_command_backlog_recover_since_tick,
         ticks);
+    const bool quiet_profile = smp_log_profile == kSmpLogProfileQuiet;
     const bool log_detailed_counters =
-        !self_test_logged ||
-        !last_ap_work_pass ||
-        (ticks - last_per_cpu_detail_log_tick) >= kPerCpuDetailLogTicks;
+        !quiet_profile &&
+        (!self_test_logged ||
+         !last_ap_work_pass ||
+         (ticks - last_per_cpu_detail_log_tick) >= kPerCpuDetailLogTicks);
     if (log_detailed_counters) {
         last_per_cpu_detail_log_tick = ticks;
     }
@@ -245,15 +271,21 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
     }
     if (wake_total != last_ap_wake_total) {
         last_ap_wake_total = wake_total;
-        log_smp_ap_wake_update(wake_total);
+        if (!quiet_profile) {
+            log_smp_ap_wake_update(wake_total);
+        }
     }
     if (ipi_observed_aps != last_ipi_observed_total) {
         last_ipi_observed_total = ipi_observed_aps;
-        log_smp_ipi_observed_update(ipi_observed_aps);
+        if (!quiet_profile) {
+            log_smp_ipi_observed_update(ipi_observed_aps);
+        }
     }
     if (ap_nonkick_interrupt_total != last_ap_nonkick_interrupt_total) {
         last_ap_nonkick_interrupt_total = ap_nonkick_interrupt_total;
-        log_info("smp: AP observed non-kick interrupt activity.");
+        if (!quiet_profile) {
+            log_info("smp: AP observed non-kick interrupt activity.");
+        }
     }
     if (ipi_scheduler_total != last_ipi_scheduler_total) {
         last_ipi_scheduler_total = ipi_scheduler_total;
@@ -311,11 +343,15 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
     }
     if (networking_packets_total != last_networking_packets_total) {
         last_networking_packets_total = networking_packets_total;
-        log_smp_networking_rx_packets_total(networking_packets_total);
+        if (!quiet_profile) {
+            log_smp_networking_rx_packets_total(networking_packets_total);
+        }
     }
     if (networking_batches_total != last_networking_batches_total) {
         last_networking_batches_total = networking_batches_total;
-        log_smp_networking_rx_batches_total(networking_batches_total);
+        if (!quiet_profile) {
+            log_smp_networking_rx_batches_total(networking_batches_total);
+        }
     }
     if (filesystem_ap_job_total != last_filesystem_ap_job_total) {
         last_filesystem_ap_job_total = filesystem_ap_job_total;
@@ -426,12 +462,16 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
         const uint64_t networking_packets = networking_rx_packets_processed_for_cpu(i);
         if (networking_packets != last_networking_packets_by_cpu[i]) {
             last_networking_packets_by_cpu[i] = networking_packets;
-            log_smp_networking_rx_packets_cpu(i, networking_packets);
+            if (!quiet_profile) {
+                log_smp_networking_rx_packets_cpu(i, networking_packets);
+            }
         }
         const uint64_t networking_batches = networking_rx_batches_for_cpu(i);
         if (networking_batches != last_networking_batches_by_cpu[i]) {
             last_networking_batches_by_cpu[i] = networking_batches;
-            log_smp_networking_rx_batches_cpu(i, networking_batches);
+            if (!quiet_profile) {
+                log_smp_networking_rx_batches_cpu(i, networking_batches);
+            }
         }
         const uint64_t filesystem_ap_jobs = filesystem_ap_deferred_job_for_cpu(i);
         if (filesystem_ap_jobs != last_filesystem_ap_job_by_cpu[i]) {
@@ -535,12 +575,14 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
         migration_gate_active ? expected_ap_cpu_mask : 0;
     const bool self_test_pass_for_logs =
         ap_work_pass_for_logs && (!migration_gate_active || migration_pass_for_logs);
+    const bool self_test_periodic_due =
+        !quiet_profile && (ticks - last_self_test_log_tick) >= 500;
     const bool can_emit_initial_self_test = self_test_logged || (ap_work_execute_total != 0);
     if (can_emit_initial_self_test &&
         (!self_test_logged ||
         ap_work_pass_for_logs != last_ap_work_pass ||
         migration_pass_for_logs != last_migration_pass ||
-        (ticks - last_self_test_log_tick) >= 500)) {
+        self_test_periodic_due)) {
         log_smp_self_test_summary(ap_work_pass_for_logs, ap_work_ok_for_logs, ap_expected,
                                   ap_work_dispatch_total, ap_work_execute_total);
         log_smp_migration_self_test_summary(migration_pass_for_logs,
@@ -560,7 +602,10 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
         last_migration_pass = migration_pass_for_logs;
         self_test_logged = true;
     }
-    if ((ticks - last_smp_health_snapshot_tick) >= kSmpHealthSnapshotTicks) {
+    const uint64_t health_snapshot_ticks =
+        quiet_profile ? smp_quiet_health_snapshot_ticks : kSmpHealthSnapshotTicks;
+    if (health_snapshot_ticks != 0 &&
+        (ticks - last_smp_health_snapshot_tick) >= health_snapshot_ticks) {
         last_smp_health_snapshot_tick = ticks;
         const uint64_t trigger_profile =
             __atomic_load_n(&g_ap_trigger_profile, __ATOMIC_RELAXED);
@@ -600,7 +645,8 @@ void kernel_idle_poll_smp_observability(uint64_t ticks) {
                                 trigger_profile,
                                 self_test_pass_for_logs);
     }
-    if ((ticks - last_heartbeat_log) >= kHeartbeatLogTicks) {
+    if (!quiet_profile &&
+        (ticks - last_heartbeat_log) >= kHeartbeatLogTicks) {
         last_heartbeat_log = ticks;
         log_info("timer: heartbeat.");
     }

@@ -1,5 +1,6 @@
 #include "fortify/systems/kernel/runtime_command_smp_control.h"
 
+#include "fortify/systems/kernel/kernel_idle_observability.h"
 #include "fortify/systems/kernel/kernel_string.h"
 #include "fortify/systems/console/console.h"
 #include "fortify/systems/scheduler/scheduler.h"
@@ -49,6 +50,70 @@ bool kernel_handle_smp_control_runtime_command(const char *command) {
         serial_write(enabled != 0 ? "1\n" : "0\n");
         console_write("[INFO] smp: serial cmd ap-task-migrate set=");
         console_write(enabled != 0 ? "1\n" : "0\n");
+        return true;
+    }
+    if (kernel_string_equals(command, "smp-log")) {
+        const uint64_t profile = kernel_smp_log_profile();
+        char quiet_health_ticks_hex[19];
+        kernel_format_hex64(quiet_health_ticks_hex, kernel_smp_quiet_health_snapshot_ticks());
+        serial_write("[INFO] smp: serial cmd smp-log current=");
+        serial_write(profile == 1 ? "quiet\n" : "default\n");
+        serial_write("[INFO] smp: serial cmd smp-log quiet-health-ticks=");
+        serial_write(quiet_health_ticks_hex);
+        serial_write("\n");
+        console_write("[INFO] smp: serial cmd smp-log current=");
+        console_write(profile == 1 ? "quiet\n" : "default\n");
+        console_write("[INFO] smp: serial cmd smp-log quiet-health-ticks=");
+        console_write(quiet_health_ticks_hex);
+        console_write("\n");
+        return true;
+    }
+    if (kernel_string_starts_with(command, "smp-log ")) {
+        const char *profile_text = command + 8;
+        uint64_t profile = 0;
+        if (kernel_string_equals(profile_text, "default")) {
+            profile = 0;
+        } else if (kernel_string_equals(profile_text, "quiet")) {
+            profile = 1;
+        } else {
+            serial_write("[WARN] smp: serial cmd smp-log expects default|quiet\n");
+            console_write("[WARN] smp: serial cmd smp-log expects default|quiet\n");
+            return true;
+        }
+        kernel_set_smp_log_profile(profile);
+        serial_write("[INFO] smp: serial cmd smp-log set=");
+        serial_write(profile == 1 ? "quiet\n" : "default\n");
+        console_write("[INFO] smp: serial cmd smp-log set=");
+        console_write(profile == 1 ? "quiet\n" : "default\n");
+        return true;
+    }
+    if (kernel_string_equals(command, "smp-log-health")) {
+        char ticks_hex[19];
+        kernel_format_hex64(ticks_hex, kernel_smp_quiet_health_snapshot_ticks());
+        serial_write("[INFO] smp: serial cmd smp-log-health current=");
+        serial_write(ticks_hex);
+        serial_write("\n");
+        console_write("[INFO] smp: serial cmd smp-log-health current=");
+        console_write(ticks_hex);
+        console_write("\n");
+        return true;
+    }
+    if (kernel_string_starts_with(command, "smp-log-health ")) {
+        uint64_t ticks = 0;
+        if (!kernel_parse_u64_decimal(command + 15, &ticks) || ticks > 60000) {
+            serial_write("[WARN] smp: serial cmd smp-log-health expects ticks 0..60000\n");
+            console_write("[WARN] smp: serial cmd smp-log-health expects ticks 0..60000\n");
+            return true;
+        }
+        kernel_set_smp_quiet_health_snapshot_ticks(ticks);
+        char ticks_hex[19];
+        kernel_format_hex64(ticks_hex, ticks);
+        serial_write("[INFO] smp: serial cmd smp-log-health set=");
+        serial_write(ticks_hex);
+        serial_write("\n");
+        console_write("[INFO] smp: serial cmd smp-log-health set=");
+        console_write(ticks_hex);
+        console_write("\n");
         return true;
     }
     if (kernel_string_starts_with(command, "net-rx-inject ")) {
