@@ -193,6 +193,12 @@ bool filesystem_virtio_9p_head_request_status(uint64_t request_id,
                                               uint64_t *out_state,
                                               uint64_t *out_bytes,
                                               uint64_t *out_checksum);
+uint64_t filesystem_virtio_9p_head_request_submit_total(void);
+uint64_t filesystem_virtio_9p_head_request_done_total(void);
+uint64_t filesystem_virtio_9p_head_request_done_ok_total(void);
+uint64_t filesystem_virtio_9p_head_request_done_err_total(void);
+uint64_t filesystem_virtio_9p_head_request_pending_total(void);
+uint64_t filesystem_virtio_9p_head_request_running_total(void);
 bool port_manager_init(void);
 bool port_manager_request_ap_maintenance(uint64_t cpu_index);
 bool port_manager_poll_ap_maintenance_trigger(uint64_t cpu_index, uint64_t tick);

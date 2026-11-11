@@ -288,6 +288,8 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `fs-9p-probe` (re-probe PCI for virtio-9p transport and log device count + last BDF/device id)
 - `fs-9p-head <path> [max-bytes]` (queue an async virtio-9p head read request; max defaults to 256, caps at 2048)
 - `fs-9p-head-status <request-id>` (check queued virtio-9p request status: pending/running/done-ok/done-err with bytes/checksum)
+- `fs-9p-stats` (print compact virtio-9p head-request telemetry: submit/done split by ok/err and pending/running state counts)
+- `fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks]` (queue one virtio-9p head request and wait for done-ok/done-err up to timeout, actively servicing AP deferred filesystem jobs while waiting; defaults: max `256`, timeout `600` ticks)
 - `surface-create <type> <title>` (create a compositor-owned surface; type: `desktop|application|document|workspace|dashboard|tool`; title is a single token, use `_` for spaces)
 - `surface-ls` (list compositor surfaces with id/type/state/layer/position/size/title)
 - `rmsg-profile [balanced|stress|quiet]` (show/set runtime-message router test profile: backlog warning depth/debounce, backlog-test pause ticks, and smoke-extended backlog count)
@@ -405,6 +407,16 @@ Web head-request vertical-slice quick checks:
   - expected behavior: request submits successfully, reaches `done-ok` before timeout, and reports deterministic byte/checksum telemetry
 - `web-head-stats`
   - expected immediate log: one compact webaccess line with submit/done(ok/err) and state(pending/running) counters
+  - expected behavior after smoke completion: done counters advance, pending/running return toward `0`
+
+Virtio-9p head-request vertical-slice quick checks:
+
+- `fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks]`
+  - expected immediate log: `pass id=... state=done-ok bytes=... checksum=... elapsed=... timeout=... tick-stall=0`
+  - expected behavior: with virtio-9p transport present, request submits successfully, reaches `done-ok` before timeout, and reports deterministic byte/checksum telemetry
+  - failure mode when transport is absent: `fail no-device probes/devices=.../...`
+- `fs-9p-stats`
+  - expected immediate log: one compact filesystem line with submit/done(ok/err) and state(pending/running) counters
   - expected behavior after smoke completion: done counters advance, pending/running return toward `0`
 
 AP migration-proof quick checks:

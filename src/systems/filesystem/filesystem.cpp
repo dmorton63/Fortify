@@ -48,6 +48,8 @@ volatile uint64_t g_fs_virtio_9p_last_function = 0;
 volatile uint64_t g_fs_virtio_9p_last_device_id = 0;
 volatile uint64_t g_fs_virtio_9p_read_attempt_total = 0;
 volatile uint64_t g_fs_virtio_9p_read_success_total = 0;
+volatile uint64_t g_fs_virtio_9p_read_done_total = 0;
+volatile uint64_t g_fs_virtio_9p_read_done_err_total = 0;
 volatile uint32_t g_storage_head_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_storage_tail_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_storage_queue_high_water_by_cpu[kMaxCpus] = {};
@@ -652,7 +654,10 @@ void process_virtio_9p_head_requests_on_worker(void) {
         g_fs_virtio_9p_req_queue[i].checksum = checksum;
         if (ok) {
             __atomic_fetch_add(&g_fs_virtio_9p_read_success_total, 1, __ATOMIC_RELAXED);
+        } else {
+            __atomic_fetch_add(&g_fs_virtio_9p_read_done_err_total, 1, __ATOMIC_RELAXED);
         }
+        __atomic_fetch_add(&g_fs_virtio_9p_read_done_total, 1, __ATOMIC_RELAXED);
         log_info(ok
                      ? "filesystem: virtio-9p async head request completed."
                      : "filesystem: virtio-9p async head request failed.");
@@ -1737,6 +1742,8 @@ bool filesystem_init(void) {
     __atomic_store_n(&g_fs_virtio_9p_last_device_id, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_read_attempt_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_read_success_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_read_done_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_read_done_err_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_req_next_id, 0, __ATOMIC_RELAXED);
     reset_virtio_9p_transport_state();
     clear_virtio_9p_request_queue();
@@ -2085,4 +2092,42 @@ bool filesystem_virtio_9p_head_request_status(uint64_t request_id,
         return true;
     }
     return false;
+}
+
+uint64_t filesystem_virtio_9p_head_request_submit_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_read_attempt_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_head_request_done_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_read_done_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_head_request_done_ok_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_read_success_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_head_request_done_err_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_read_done_err_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_head_request_pending_total(void) {
+    uint64_t total = 0;
+    for (uint64_t i = 0; i < kFsVirtio9pReqQueueCap; i++) {
+        if (__atomic_load_n(&g_fs_virtio_9p_req_queue[i].state, __ATOMIC_ACQUIRE) ==
+            kFsVirtio9pReqStatePending) {
+            total++;
+        }
+    }
+    return total;
+}
+
+uint64_t filesystem_virtio_9p_head_request_running_total(void) {
+    uint64_t total = 0;
+    for (uint64_t i = 0; i < kFsVirtio9pReqQueueCap; i++) {
+        if (__atomic_load_n(&g_fs_virtio_9p_req_queue[i].state, __ATOMIC_ACQUIRE) ==
+            kFsVirtio9pReqStateRunning) {
+            total++;
+        }
+    }
+    return total;
 }

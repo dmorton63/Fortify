@@ -346,6 +346,204 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         console_write("\n");
         return true;
     }
+    if (kernel_string_equals(command, "fs-9p-stats")) {
+        char submit_hex[19];
+        char done_hex[19];
+        char done_ok_hex[19];
+        char done_err_hex[19];
+        char pending_hex[19];
+        char running_hex[19];
+        kernel_format_hex64(submit_hex, filesystem_virtio_9p_head_request_submit_total());
+        kernel_format_hex64(done_hex, filesystem_virtio_9p_head_request_done_total());
+        kernel_format_hex64(done_ok_hex, filesystem_virtio_9p_head_request_done_ok_total());
+        kernel_format_hex64(done_err_hex, filesystem_virtio_9p_head_request_done_err_total());
+        kernel_format_hex64(pending_hex, filesystem_virtio_9p_head_request_pending_total());
+        kernel_format_hex64(running_hex, filesystem_virtio_9p_head_request_running_total());
+
+        serial_write("[INFO] filesystem: serial cmd fs-9p-stats submit/done(ok/err)=");
+        serial_write(submit_hex);
+        serial_write("/");
+        serial_write(done_hex);
+        serial_write("(");
+        serial_write(done_ok_hex);
+        serial_write("/");
+        serial_write(done_err_hex);
+        serial_write(") state(pending/running)=");
+        serial_write(pending_hex);
+        serial_write("/");
+        serial_write(running_hex);
+        serial_write("\n");
+
+        console_write("[INFO] filesystem: serial cmd fs-9p-stats submit/done(ok/err)=");
+        console_write(submit_hex);
+        console_write("/");
+        console_write(done_hex);
+        console_write("(");
+        console_write(done_ok_hex);
+        console_write("/");
+        console_write(done_err_hex);
+        console_write(") state(pending/running)=");
+        console_write(pending_hex);
+        console_write("/");
+        console_write(running_hex);
+        console_write("\n");
+        return true;
+    }
+    if (kernel_string_starts_with(command, "fs-9p-smoke-wait ")) {
+        constexpr uint64_t kFsVirtio9pReqStateDoneOk = 3;
+        constexpr uint64_t kFsVirtio9pReqStateDoneErr = 4;
+        char path[64];
+        char max_bytes_token[16];
+        char timeout_token[16];
+        uint64_t cursor = 17;
+        uint64_t max_bytes = 256;
+        uint64_t timeout_ticks = 600;
+        if (!kernel_parse_token(command, cursor, path, sizeof(path), &cursor)) {
+            serial_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait expects <path> [max-bytes] [timeout-ticks]\n");
+            console_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait expects <path> [max-bytes] [timeout-ticks]\n");
+            return true;
+        }
+        if (kernel_parse_token(command, cursor, max_bytes_token, sizeof(max_bytes_token), &cursor)) {
+            if (!kernel_parse_u64_decimal(max_bytes_token, &max_bytes) || max_bytes == 0 || max_bytes > 2048) {
+                serial_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait max-bytes expects 1..2048\n");
+                console_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait max-bytes expects 1..2048\n");
+                return true;
+            }
+            if (kernel_parse_token(command, cursor, timeout_token, sizeof(timeout_token), &cursor)) {
+                if (!kernel_parse_u64_decimal(timeout_token, &timeout_ticks) ||
+                    timeout_ticks == 0 || timeout_ticks > 10000) {
+                    serial_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait timeout expects 1..10000 ticks\n");
+                    console_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait timeout expects 1..10000 ticks\n");
+                    return true;
+                }
+            }
+        }
+        char extra_token[4];
+        if (kernel_parse_token(command, cursor, extra_token, sizeof(extra_token), 0)) {
+            serial_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait accepts only <path> [max-bytes] [timeout-ticks]\n");
+            console_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait accepts only <path> [max-bytes] [timeout-ticks]\n");
+            return true;
+        }
+
+        if (filesystem_virtio_9p_device_total() == 0) {
+            (void)filesystem_probe_virtio_9p();
+        }
+        if (filesystem_virtio_9p_device_total() == 0) {
+            char probes_hex[19];
+            char devices_hex[19];
+            kernel_format_hex64(probes_hex, filesystem_virtio_9p_probe_total());
+            kernel_format_hex64(devices_hex, filesystem_virtio_9p_device_total());
+            serial_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait fail no-device probes/devices=");
+            serial_write(probes_hex);
+            serial_write("/");
+            serial_write(devices_hex);
+            serial_write("\n");
+            console_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait fail no-device probes/devices=");
+            console_write(probes_hex);
+            console_write("/");
+            console_write(devices_hex);
+            console_write("\n");
+            return true;
+        }
+
+        uint64_t request_id = 0;
+        if (!filesystem_virtio_9p_head_request_submit(path, max_bytes, &request_id)) {
+            serial_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait fail submit\n");
+            console_write("[WARN] filesystem: serial cmd fs-9p-smoke-wait fail submit\n");
+            return true;
+        }
+
+        uint64_t state = 0;
+        uint64_t bytes = 0;
+        uint64_t checksum = 0;
+        bool done = false;
+        bool tick_stalled = false;
+        uint64_t iterations = 0;
+        uint64_t stalled_iterations = 0;
+        const uint64_t start_tick = timer_ticks();
+        uint64_t last_tick = start_tick;
+        const uint64_t max_poll_iterations = timeout_ticks * 2048;
+        const uint64_t max_stalled_iterations = 200000;
+
+        while (true) {
+            const uint64_t now_tick = timer_ticks();
+            if ((now_tick - start_tick) > timeout_ticks) {
+                break;
+            }
+            if (filesystem_virtio_9p_head_request_status(request_id, &state, &bytes, &checksum) &&
+                (state == kFsVirtio9pReqStateDoneOk || state == kFsVirtio9pReqStateDoneErr)) {
+                done = true;
+                break;
+            }
+            const uint64_t total = smp_total_cpu_count();
+            for (uint64_t cpu = 1; cpu < total; cpu++) {
+                filesystem_process_ap_deferred_job(cpu, 0);
+            }
+            (void)scheduler_service_deferred_switch();
+            if (now_tick == last_tick) {
+                stalled_iterations++;
+            } else {
+                last_tick = now_tick;
+                stalled_iterations = 0;
+            }
+            iterations++;
+            if (iterations >= max_poll_iterations || stalled_iterations >= max_stalled_iterations) {
+                tick_stalled = true;
+                break;
+            }
+        }
+
+        const bool pass = done && state == kFsVirtio9pReqStateDoneOk;
+        const uint64_t elapsed_ticks = timer_ticks() - start_tick;
+        const char *state_text = "pending";
+        if (state == 2) state_text = "running";
+        else if (state == kFsVirtio9pReqStateDoneOk) state_text = "done-ok";
+        else if (state == kFsVirtio9pReqStateDoneErr) state_text = "done-err";
+
+        char request_hex[19];
+        char bytes_hex[19];
+        char checksum_hex[19];
+        char elapsed_hex[19];
+        char timeout_hex[19];
+        kernel_format_hex64(request_hex, request_id);
+        kernel_format_hex64(bytes_hex, bytes);
+        kernel_format_hex64(checksum_hex, checksum);
+        kernel_format_hex64(elapsed_hex, elapsed_ticks);
+        kernel_format_hex64(timeout_hex, timeout_ticks);
+
+        serial_write(pass ? "[INFO] filesystem: serial cmd fs-9p-smoke-wait pass id="
+                          : "[WARN] filesystem: serial cmd fs-9p-smoke-wait fail id=");
+        serial_write(request_hex);
+        serial_write(" state=");
+        serial_write(state_text);
+        serial_write(" bytes=");
+        serial_write(bytes_hex);
+        serial_write(" checksum=");
+        serial_write(checksum_hex);
+        serial_write(" elapsed=");
+        serial_write(elapsed_hex);
+        serial_write(" timeout=");
+        serial_write(timeout_hex);
+        serial_write(" tick-stall=");
+        serial_write(tick_stalled ? "1\n" : "0\n");
+
+        console_write(pass ? "[INFO] filesystem: serial cmd fs-9p-smoke-wait pass id="
+                           : "[WARN] filesystem: serial cmd fs-9p-smoke-wait fail id=");
+        console_write(request_hex);
+        console_write(" state=");
+        console_write(state_text);
+        console_write(" bytes=");
+        console_write(bytes_hex);
+        console_write(" checksum=");
+        console_write(checksum_hex);
+        console_write(" elapsed=");
+        console_write(elapsed_hex);
+        console_write(" timeout=");
+        console_write(timeout_hex);
+        console_write(" tick-stall=");
+        console_write(tick_stalled ? "1\n" : "0\n");
+        return true;
+    }
     if (kernel_string_starts_with(command, "surface-create ")) {
         char type_token[24];
         char title_token[32];
