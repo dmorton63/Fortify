@@ -1,4 +1,4 @@
-.PHONY: all build-kernel build-kernel-stress limine-binaries image image-stress usb-image usb-image-stress run run-stress clean FORCE
+.PHONY: all build-kernel build-kernel-stress limine-binaries image image-stress usb-image usb-image-stress run run-share run-stress clean FORCE
 
 CLANG ?= clang++
 LD ?= ld.lld
@@ -44,6 +44,7 @@ LIMINE_DIR := $(abspath $(BUILD_DIR)/limine)
 LIMINE_BINARIES ?= $(abspath $(BUILD_DIR)/limine-binaries)
 GENERATED_DIR := $(BUILD_DIR)/generated
 SHARE_README_HEADER := $(GENERATED_DIR)/share_readme_blob.h
+BUILD_CONFIG_STAMP := $(GENERATED_DIR)/build_config.stamp
 
 CPP_SOURCES := $(shell find src -type f -name '*.cpp' | sort)
 ASM_SOURCES := $(shell find src -type f -name '*.S' | sort)
@@ -105,6 +106,10 @@ $(SHARE_README_HEADER): FORCE
 				share_readme_file="$(QEMU_SHARE_PATH)/README.txt"; \
 			elif [ -f "$(QEMU_SHARE_PATH)/readme.txt" ]; then \
 				share_readme_file="$(QEMU_SHARE_PATH)/readme.txt"; \
+			elif [ -f "$(QEMU_SHARE_PATH)/README.md" ]; then \
+				share_readme_file="$(QEMU_SHARE_PATH)/README.md"; \
+			elif [ -f "$(QEMU_SHARE_PATH)/readme.md" ]; then \
+				share_readme_file="$(QEMU_SHARE_PATH)/readme.md"; \
 			fi; \
 		fi; \
 		if [ -n "$$share_readme_file" ] && [ -f "$$share_readme_file" ]; then \
@@ -132,7 +137,22 @@ $(SHARE_README_HEADER): FORCE
 			'#endif' > "$(SHARE_README_HEADER)"; \
 	fi
 
-$(OBJ_DIR)/%.o: src/%.cpp $(SHARE_README_HEADER)
+$(BUILD_CONFIG_STAMP): FORCE
+	@mkdir -p "$(GENERATED_DIR)"
+	@tmp_file="$(BUILD_CONFIG_STAMP).tmp"; \
+	printf '%s\n' \
+		"FORTIFY_DISPLAY_LOGS=$(DISPLAY_LOGS)" \
+		"FORTIFY_FS_MOCK_READER=$(FS_MOCK_READER)" \
+		"FORTIFY_SHARE_README_BRIDGE=$(SHARE_README_BRIDGE)" \
+		"FORTIFY_QEMU_SHARE_ENABLE=$(QEMU_SHARE_ENABLE)" \
+		"FORTIFY_QEMU_SHARE_TAG=$(QEMU_SHARE_TAG)" > "$$tmp_file"; \
+	if [ -f "$(BUILD_CONFIG_STAMP)" ] && cmp -s "$$tmp_file" "$(BUILD_CONFIG_STAMP)"; then \
+		rm -f "$$tmp_file"; \
+	else \
+		mv "$$tmp_file" "$(BUILD_CONFIG_STAMP)"; \
+	fi
+
+$(OBJ_DIR)/%.o: src/%.cpp $(SHARE_README_HEADER) $(BUILD_CONFIG_STAMP)
 	@mkdir -p $(dir $@)
 	@$(CLANG) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 
@@ -225,6 +245,10 @@ usb-image-stress: image-stress
 
 run: image
 	@command -v $(QEMU) >/dev/null 2>&1 || { echo "$(QEMU) is required to run the VM."; exit 1; }
+	@if [ "$(QEMU_SHARE_ENABLE)" = "1" ] && [ ! -d "$(QEMU_SHARE_PATH)" ]; then \
+		echo "QEMU_SHARE_ENABLE=1 requires an existing QEMU_SHARE_PATH directory: $(QEMU_SHARE_PATH)"; \
+		exit 1; \
+	fi
 	@if [ -n "$(QEMU_SERIAL_INPUT)" ]; then \
 		( sleep "$(QEMU_SERIAL_INPUT_DELAY)"; printf "%b" "$(QEMU_SERIAL_INPUT)" ) | $(QEMU) \
 			-cdrom "$(ISO_OUT)" \
@@ -268,6 +292,9 @@ run: image
 				-serial stdio; \
 		fi; \
 	fi
+
+run-share:
+	@$(MAKE) QEMU_SHARE_ENABLE=1 SHARE_README_BRIDGE=1 QEMU_SHARE_PATH='$(CURDIR)' SHARE_README_FILE='$(CURDIR)/README.md' run
 
 run-stress:
 	@$(MAKE) BUILD_DIR=build-stress LINKER_SCRIPT=build/linker.ld AP_STRESS=1 LIMINE_BINARIES='$(SHARED_LIMINE_BINARIES)' run

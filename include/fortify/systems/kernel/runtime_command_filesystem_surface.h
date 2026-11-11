@@ -2,5 +2,6 @@
 #define FORTIFY_RUNTIME_COMMAND_FILESYSTEM_SURFACE_H
 
 bool kernel_handle_filesystem_surface_runtime_command(const char *command);
+void kernel_poll_filesystem_surface_runtime_tasks(void);
 
 #endif

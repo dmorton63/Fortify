@@ -289,7 +289,7 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `fs-9p-head <path> [max-bytes]` (queue an async virtio-9p head read request; max defaults to 256, caps at 2048)
 - `fs-9p-head-status <request-id>` (check queued virtio-9p request status: pending/running/done-ok/done-err with bytes/checksum)
 - `fs-9p-stats` (print compact virtio-9p head-request telemetry: submit/done split by ok/err and pending/running state counts)
-- `fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks]` (queue one virtio-9p head request and wait for done-ok/done-err up to timeout, actively servicing AP deferred filesystem jobs while waiting; defaults: max `256`, timeout `600` ticks)
+- `fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks]` (queue one virtio-9p head request and return immediately; completion logs asynchronously as done-ok/done-err/timeout; defaults: max `256`, timeout `600` ticks; with `QEMU_SHARE_ENABLE=1`, requests are safety-gated to avoid AP-worker lockups; when `SHARE_README_BRIDGE=1`, requests use a safe bridge-blob fallback and can report `done-ok`)
 - `surface-create <type> <title>` (create a compositor-owned surface; type: `desktop|application|document|workspace|dashboard|tool`; title is a single token, use `_` for spaces)
 - `surface-ls` (list compositor surfaces with id/type/state/layer/position/size/title)
 - `rmsg-profile [balanced|stress|quiet]` (show/set runtime-message router test profile: backlog warning depth/debounce, backlog-test pause ticks, and smoke-extended backlog count)
@@ -412,8 +412,10 @@ Web head-request vertical-slice quick checks:
 Virtio-9p head-request vertical-slice quick checks:
 
 - `fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks]`
-  - expected immediate log: `pass id=... state=done-ok bytes=... checksum=... elapsed=... timeout=... tick-stall=0`
-  - expected behavior: with virtio-9p transport present, request submits successfully, reaches `done-ok` before timeout, and reports deterministic byte/checksum telemetry
+  - expected immediate log: `armed id=... timeout=... (result logs asynchronously)`
+  - expected completion log: `pass id=... state=done-ok bytes=... checksum=... elapsed=... timeout=... tick-stall=0`
+  - expected behavior: with virtio-9p transport present, request submits successfully and reports deterministic byte/checksum telemetry without blocking command handling
+  - temporary safety behavior with `QEMU_SHARE_ENABLE=1`: request execution is safety-gated to avoid AP-worker lockups; with `SHARE_README_BRIDGE=1`, requests use a safe bridge-blob fallback (`done-ok` when blob is non-empty), otherwise requests complete as `done-err`
   - failure mode when transport is absent: `fail no-device probes/devices=.../...`
 - `fs-9p-stats`
   - expected immediate log: one compact filesystem line with submit/done(ok/err) and state(pending/running) counters
@@ -451,6 +453,8 @@ When migration validation is inactive, `smp: self-test migration=` reports `pass
 - `make usb-image` - build USB-bootable ISO artifact (`build/fortify-usb.iso`)
 - `make usb-image-stress` - build USB-bootable ISO artifact with AP stress mode enabled
 - `make run` - build and run in QEMU
+- `make run-share` - build and run in QEMU with host share + README bridge enabled (`QEMU_SHARE_ENABLE=1 SHARE_README_BRIDGE=1 QEMU_SHARE_PATH=$(CURDIR) SHARE_README_FILE=$(CURDIR)/README.md`)
+  - bridge blob source auto-detect order: `README.TXT`, `README.txt`, `readme.txt`, then `README.md`/`readme.md`
 - `make run-stress` - build and run in QEMU with AP stress mode enabled
 - `make clean` - remove generated outputs
 

@@ -891,6 +891,8 @@ void kernel_service_runtime_commands_impl(void) {
         }
     };
 
+    kernel_poll_filesystem_surface_runtime_tasks();
+
     char ch = '\0';
     bool saw_serial_input = false;
     while (serial_read_char(&ch)) {
