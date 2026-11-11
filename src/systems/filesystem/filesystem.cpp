@@ -57,6 +57,7 @@ volatile uint64_t g_fs_virtio_9p_read_attempt_total = 0;
 volatile uint64_t g_fs_virtio_9p_read_success_total = 0;
 volatile uint64_t g_fs_virtio_9p_read_done_total = 0;
 volatile uint64_t g_fs_virtio_9p_read_done_err_total = 0;
+volatile uint64_t g_fs_virtio_9p_share_experimental_mode = 0;
 volatile uint32_t g_storage_head_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_storage_tail_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_storage_queue_high_water_by_cpu[kMaxCpus] = {};
@@ -115,10 +116,10 @@ struct fat32_dir_entry_info {
 };
 
 bool pick_target_ap(uint64_t *out_cpu);
-bool virtio_9p_read_file_head_impl(const char *path,
-                                   uint64_t max_bytes,
-                                   uint64_t *out_bytes,
-                                   uint64_t *out_checksum);
+[[maybe_unused]] bool virtio_9p_read_file_head_impl(const char *path,
+                                                    uint64_t max_bytes,
+                                                    uint64_t *out_bytes,
+                                                    uint64_t *out_checksum);
 
 struct virtio_9p_pci_location {
     bool valid;
@@ -660,7 +661,6 @@ void clear_virtio_9p_request_queue(void) {
     }
 }
 
-#if !FORTIFY_QEMU_SHARE_ENABLE
 bool schedule_virtio_9p_request_worker(void) {
     uint64_t target_cpu = 0;
     if (!pick_target_ap(&target_cpu)) {
@@ -668,7 +668,6 @@ bool schedule_virtio_9p_request_worker(void) {
     }
     return scheduler_enqueue_ap_maintenance_job(target_cpu);
 }
-#endif
 
 void process_virtio_9p_head_requests_on_worker(void) {
     for (uint64_t i = 0; i < kFsVirtio9pReqQueueCap; i++) {
@@ -841,10 +840,10 @@ bool virtio_9p_negotiate_session(uint16_t *out_fid) {
     return true;
 }
 
-bool virtio_9p_read_file_head_impl(const char *path,
-                                   uint64_t max_bytes,
-                                   uint64_t *out_bytes,
-                                   uint64_t *out_checksum) {
+[[maybe_unused]] bool virtio_9p_read_file_head_impl(const char *path,
+                                                    uint64_t max_bytes,
+                                                    uint64_t *out_bytes,
+                                                    uint64_t *out_checksum) {
     if (path == 0 || path[0] == '\0' || max_bytes == 0 || out_bytes == 0) {
         return false;
     }
@@ -1780,6 +1779,7 @@ bool filesystem_init(void) {
     __atomic_store_n(&g_fs_virtio_9p_read_success_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_read_done_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_read_done_err_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_share_experimental_mode, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_req_next_id, 0, __ATOMIC_RELAXED);
     reset_virtio_9p_transport_state();
     clear_virtio_9p_request_queue();
@@ -1858,7 +1858,13 @@ void filesystem_process_ap_deferred_job(uint64_t cpu_index, uint64_t sequence) {
     if (cpu_index >= kMaxCpus) {
         return;
     }
+#if FORTIFY_QEMU_SHARE_ENABLE
+    if (filesystem_virtio_9p_share_experimental_mode_enabled()) {
+        process_virtio_9p_head_requests_on_worker();
+    }
+#else
     process_virtio_9p_head_requests_on_worker();
+#endif
     uint64_t processed = 0;
     uint64_t processed_irq = 0;
     uint64_t processed_injected = 0;
@@ -2100,6 +2106,12 @@ bool filesystem_virtio_9p_head_request_submit(const char *path,
         }
         __atomic_fetch_add(&g_fs_virtio_9p_read_attempt_total, 1, __ATOMIC_RELAXED);
 #if FORTIFY_QEMU_SHARE_ENABLE
+        if (__atomic_load_n(&g_fs_virtio_9p_share_experimental_mode, __ATOMIC_RELAXED) != 0) {
+            __atomic_store_n(&g_fs_virtio_9p_req_queue[i].state, kFsVirtio9pReqStatePending, __ATOMIC_RELEASE);
+            (void)schedule_virtio_9p_request_worker();
+            *out_request_id = req_id;
+            return true;
+        }
 #if FORTIFY_SHARE_README_BRIDGE
         uint64_t bytes = 0;
         uint64_t checksum = 0;
@@ -2190,4 +2202,19 @@ uint64_t filesystem_virtio_9p_head_request_running_total(void) {
         }
     }
     return total;
+}
+
+bool filesystem_set_virtio_9p_share_experimental_mode(bool enabled) {
+#if FORTIFY_QEMU_SHARE_ENABLE
+    if (enabled) {
+        __atomic_store_n(&g_fs_virtio_9p_share_experimental_mode, 0, __ATOMIC_RELAXED);
+        return false;
+    }
+#endif
+    __atomic_store_n(&g_fs_virtio_9p_share_experimental_mode, enabled ? 1ULL : 0ULL, __ATOMIC_RELAXED);
+    return true;
+}
+
+bool filesystem_virtio_9p_share_experimental_mode_enabled(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_share_experimental_mode, __ATOMIC_RELAXED) != 0;
 }

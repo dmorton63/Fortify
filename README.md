@@ -286,6 +286,7 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `fs-root-ls [source]` (list FAT32 root entries from source `1` by default; optional source `0..255`)
 - `fs-root-head <name.EXT> [source]` (read up to 256 bytes from a FAT32 root file head and log byte count/checksum)
 - `fs-9p-probe` (re-probe PCI for virtio-9p transport and log device count + last BDF/device id)
+- `fs-9p-mode [safe|experimental]` (show/set share-mode 9p execution mode; default `safe`; `experimental` is currently blocked in share builds by a lock-guard and reports a warning)
 - `fs-9p-head <path> [max-bytes]` (queue an async virtio-9p head read request; max defaults to 256, caps at 2048)
 - `fs-9p-head-status <request-id>` (check queued virtio-9p request status: pending/running/done-ok/done-err with bytes/checksum)
 - `fs-9p-stats` (print compact virtio-9p head-request telemetry: submit/done split by ok/err and pending/running state counts)
@@ -415,7 +416,8 @@ Virtio-9p head-request vertical-slice quick checks:
   - expected immediate log: `armed id=... timeout=... (result logs asynchronously)`
   - expected completion log: `pass id=... state=done-ok bytes=... checksum=... elapsed=... timeout=... tick-stall=0`
   - expected behavior: with virtio-9p transport present, request submits successfully and reports deterministic byte/checksum telemetry without blocking command handling
-  - temporary safety behavior with `QEMU_SHARE_ENABLE=1`: request execution is safety-gated to avoid AP-worker lockups; with `SHARE_README_BRIDGE=1`, requests use a safe bridge-blob fallback (`done-ok` when blob is non-empty), otherwise requests complete as `done-err`
+  - share-mode guardrail: `fs-9p-mode` defaults to `safe` (safety-gated path to avoid AP-worker lockups); `fs-9p-mode experimental` is currently blocked in share builds by a lock-guard
+  - safe-mode behavior with `QEMU_SHARE_ENABLE=1`: with `SHARE_README_BRIDGE=1`, requests use a safe bridge-blob fallback (`done-ok` when blob is non-empty), otherwise requests complete as `done-err`
   - failure mode when transport is absent: `fail no-device probes/devices=.../...`
 - `fs-9p-stats`
   - expected immediate log: one compact filesystem line with submit/done(ok/err) and state(pending/running) counters

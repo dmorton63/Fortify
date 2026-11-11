@@ -199,6 +199,8 @@ uint64_t filesystem_virtio_9p_head_request_done_ok_total(void);
 uint64_t filesystem_virtio_9p_head_request_done_err_total(void);
 uint64_t filesystem_virtio_9p_head_request_pending_total(void);
 uint64_t filesystem_virtio_9p_head_request_running_total(void);
+bool filesystem_set_virtio_9p_share_experimental_mode(bool enabled);
+bool filesystem_virtio_9p_share_experimental_mode_enabled(void);
 bool port_manager_init(void);
 bool port_manager_request_ap_maintenance(uint64_t cpu_index);
 bool port_manager_poll_ap_maintenance_trigger(uint64_t cpu_index, uint64_t tick);

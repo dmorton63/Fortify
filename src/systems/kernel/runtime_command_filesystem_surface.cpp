@@ -317,6 +317,54 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         log_fs_9p_probe_snapshot();
         return true;
     }
+    if (kernel_string_equals(command, "fs-9p-mode")) {
+        const bool experimental = filesystem_virtio_9p_share_experimental_mode_enabled();
+        serial_write("[INFO] filesystem: serial cmd fs-9p-mode ");
+        serial_write(experimental ? "experimental\n" : "safe\n");
+        console_write("[INFO] filesystem: serial cmd fs-9p-mode ");
+        console_write(experimental ? "experimental\n" : "safe\n");
+        return true;
+    }
+    if (kernel_string_starts_with(command, "fs-9p-mode ")) {
+        char mode_token[16];
+        uint64_t cursor = 11;
+        if (!kernel_parse_token(command, cursor, mode_token, sizeof(mode_token), &cursor)) {
+            serial_write("[WARN] filesystem: serial cmd fs-9p-mode expects [safe|experimental]\n");
+            console_write("[WARN] filesystem: serial cmd fs-9p-mode expects [safe|experimental]\n");
+            return true;
+        }
+        char extra_token[4];
+        if (kernel_parse_token(command, cursor, extra_token, sizeof(extra_token), 0)) {
+            serial_write("[WARN] filesystem: serial cmd fs-9p-mode accepts only [safe|experimental]\n");
+            console_write("[WARN] filesystem: serial cmd fs-9p-mode accepts only [safe|experimental]\n");
+            return true;
+        }
+        bool enabled = false;
+        if (kernel_string_equals(mode_token, "safe")) {
+            enabled = false;
+        } else if (kernel_string_equals(mode_token, "experimental")) {
+            enabled = true;
+        } else {
+            serial_write("[WARN] filesystem: serial cmd fs-9p-mode expects [safe|experimental]\n");
+            console_write("[WARN] filesystem: serial cmd fs-9p-mode expects [safe|experimental]\n");
+            return true;
+        }
+        const bool applied = filesystem_set_virtio_9p_share_experimental_mode(enabled);
+        if (!applied && enabled) {
+            serial_write("[WARN] filesystem: serial cmd fs-9p-mode experimental blocked in share builds (lock-guard active)\n");
+            console_write("[WARN] filesystem: serial cmd fs-9p-mode experimental blocked in share builds (lock-guard active)\n");
+            return true;
+        }
+        serial_write("[INFO] filesystem: serial cmd fs-9p-mode set=");
+        serial_write(enabled ? "experimental" : "safe");
+        serial_write(enabled ? " (warning: true virtio-9p execution may lock under share mode)\n"
+                             : " (share-safe gating active)\n");
+        console_write("[INFO] filesystem: serial cmd fs-9p-mode set=");
+        console_write(enabled ? "experimental" : "safe");
+        console_write(enabled ? " (warning: true virtio-9p execution may lock under share mode)\n"
+                              : " (share-safe gating active)\n");
+        return true;
+    }
     if (kernel_string_starts_with(command, "fs-9p-head ")) {
         char path[64];
         char max_bytes_token[16];
