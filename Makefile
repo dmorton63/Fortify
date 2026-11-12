@@ -110,13 +110,23 @@ $(SHARE_README_HEADER): FORCE
 				share_readme_file="$(QEMU_SHARE_PATH)/README.md"; \
 			elif [ -f "$(QEMU_SHARE_PATH)/readme.md" ]; then \
 				share_readme_file="$(QEMU_SHARE_PATH)/readme.md"; \
+			elif [ -f "$(CURDIR)/README.TXT" ]; then \
+				share_readme_file="$(CURDIR)/README.TXT"; \
+			elif [ -f "$(CURDIR)/README.txt" ]; then \
+				share_readme_file="$(CURDIR)/README.txt"; \
+			elif [ -f "$(CURDIR)/readme.txt" ]; then \
+				share_readme_file="$(CURDIR)/readme.txt"; \
+			elif [ -f "$(CURDIR)/README.md" ]; then \
+				share_readme_file="$(CURDIR)/README.md"; \
+			elif [ -f "$(CURDIR)/readme.md" ]; then \
+				share_readme_file="$(CURDIR)/readme.md"; \
 			fi; \
 		fi; \
 		if [ -n "$$share_readme_file" ] && [ -f "$$share_readme_file" ]; then \
 			python3 -c 'import pathlib,sys;src=pathlib.Path(sys.argv[1]);dst=pathlib.Path(sys.argv[2]);data=src.read_bytes()[:4096];rows=[data[i:i+12] for i in range(0,len(data),12)];lines=["#ifndef FORTIFY_SHARE_README_BLOB_H","#define FORTIFY_SHARE_README_BLOB_H","",f"static const unsigned char fortify_share_readme_blob[{max(1,len(data))}] = {{"];lines.extend(["    0x00,"] if len(data)==0 else ["    "+", ".join(f"0x{b:02x}" for b in row)+"," for row in rows]);lines.extend(["};",f"static const unsigned int fortify_share_readme_blob_len = {len(data)}U;","","#endif"]);dst.write_text("\n".join(lines)+"\n",encoding="utf-8")' "$$share_readme_file" "$(SHARE_README_HEADER)"; \
 			echo "Prepared shared README bridge blob from $$share_readme_file"; \
 		else \
-			echo "Warning: SHARE_README_BRIDGE=1 but no README file found under $(QEMU_SHARE_PATH). Bridge blob will be empty."; \
+			echo "Warning: SHARE_README_BRIDGE=1 but no README file found under $(QEMU_SHARE_PATH) or $(CURDIR). Bridge blob will be empty."; \
 			printf '%s\n' \
 				'#ifndef FORTIFY_SHARE_README_BLOB_H' \
 				'#define FORTIFY_SHARE_README_BLOB_H' \

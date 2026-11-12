@@ -184,7 +184,7 @@ To bridge a host `README.TXT` into the current filesystem read path (build-time 
 QEMU_SHARE_ENABLE=1 SHARE_README_BRIDGE=1 QEMU_SHARE_PATH=/absolute/path/to/share make run-stress
 ```
 
-This injects `$(QEMU_SHARE_PATH)/README.TXT` (up to 4096 bytes) into the synthetic FAT32 `README.TXT` entry used by `fs-root-head README.TXT`, so you can validate end-to-end host-file ingestion before full 9p guest transport lands.
+This injects a README bridge blob (up to 4096 bytes) into the synthetic FAT32 `README.TXT` entry used by `fs-root-head README.TXT`, so you can validate end-to-end host-file ingestion before full 9p guest transport lands. Auto-detect checks `$(QEMU_SHARE_PATH)` first, then falls back to `$(CURDIR)` when the share path has no matching README file.
 
 And pass additional QEMU arguments through `QEMU_EXTRA_FLAGS`:
 
@@ -456,7 +456,7 @@ When migration validation is inactive, `smp: self-test migration=` reports `pass
 - `make usb-image-stress` - build USB-bootable ISO artifact with AP stress mode enabled
 - `make run` - build and run in QEMU
 - `make run-share` - build and run in QEMU with host share + README bridge enabled (`QEMU_SHARE_ENABLE=1 SHARE_README_BRIDGE=1 QEMU_SHARE_PATH=$(CURDIR) SHARE_README_FILE=$(CURDIR)/README.md`)
-  - bridge blob source auto-detect order: `README.TXT`, `README.txt`, `readme.txt`, then `README.md`/`readme.md`
+  - bridge blob source auto-detect order: in `QEMU_SHARE_PATH`, `README.TXT`, `README.txt`, `readme.txt`, then `README.md`/`readme.md`; if none exist, the same order is checked under `$(CURDIR)`
 - `make run-stress` - build and run in QEMU with AP stress mode enabled
 - `make clean` - remove generated outputs
 
