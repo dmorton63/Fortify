@@ -539,6 +539,23 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         console_write("\n");
         return true;
     }
+    if (kernel_string_equals(command, "fs-9p-reset-stats")) {
+        uint64_t active_requests = 0;
+        if (filesystem_virtio_9p_head_request_reset_stats(&active_requests)) {
+            serial_write("[INFO] filesystem: serial cmd fs-9p-reset-stats reset=ok\n");
+            console_write("[INFO] filesystem: serial cmd fs-9p-reset-stats reset=ok\n");
+        } else {
+            char active_hex[19];
+            kernel_format_hex64(active_hex, active_requests);
+            serial_write("[WARN] filesystem: serial cmd fs-9p-reset-stats reset=blocked active=");
+            serial_write(active_hex);
+            serial_write("\n");
+            console_write("[WARN] filesystem: serial cmd fs-9p-reset-stats reset=blocked active=");
+            console_write(active_hex);
+            console_write("\n");
+        }
+        return true;
+    }
     if (kernel_string_starts_with(command, "fs-9p-smoke-wait ")) {
         char path[64];
         char max_bytes_token[16];

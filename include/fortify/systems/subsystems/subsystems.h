@@ -206,6 +206,7 @@ uint64_t filesystem_virtio_9p_head_request_done_worker_err_total(void);
 uint64_t filesystem_virtio_9p_head_request_enqueue_worker_total(void);
 uint64_t filesystem_virtio_9p_head_request_enqueue_worker_fail_total(void);
 uint64_t filesystem_virtio_9p_mode_blocked_total(void);
+bool filesystem_virtio_9p_head_request_reset_stats(uint64_t *active_requests);
 bool filesystem_set_virtio_9p_share_experimental_mode(bool enabled);
 bool filesystem_virtio_9p_share_experimental_mode_enabled(void);
 bool port_manager_init(void);
