@@ -472,6 +472,10 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         char submit_invalid_hex[19];
         char submit_timeout_hex[19];
         char submit_short_hex[19];
+        char proto_packet_hex[19];
+        char proto_tag_hex[19];
+        char proto_error_hex[19];
+        char proto_type_hex[19];
         kernel_format_hex64(submit_hex, filesystem_virtio_9p_head_request_submit_total());
         kernel_format_hex64(done_hex, filesystem_virtio_9p_head_request_done_total());
         kernel_format_hex64(done_ok_hex, filesystem_virtio_9p_head_request_done_ok_total());
@@ -489,6 +493,10 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         kernel_format_hex64(submit_invalid_hex, filesystem_virtio_9p_submit_invalid_total());
         kernel_format_hex64(submit_timeout_hex, filesystem_virtio_9p_submit_timeout_total());
         kernel_format_hex64(submit_short_hex, filesystem_virtio_9p_submit_short_response_total());
+        kernel_format_hex64(proto_packet_hex, filesystem_virtio_9p_proto_packet_invalid_total());
+        kernel_format_hex64(proto_tag_hex, filesystem_virtio_9p_proto_tag_mismatch_total());
+        kernel_format_hex64(proto_error_hex, filesystem_virtio_9p_proto_error_reply_total());
+        kernel_format_hex64(proto_type_hex, filesystem_virtio_9p_proto_type_mismatch_total());
 
         serial_write("[INFO] filesystem: serial cmd fs-9p-stats submit/done(ok/err)=");
         serial_write(submit_hex);
@@ -524,6 +532,14 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         serial_write(submit_timeout_hex);
         serial_write("/");
         serial_write(submit_short_hex);
+        serial_write(" proto(packet/tag/error/type)=");
+        serial_write(proto_packet_hex);
+        serial_write("/");
+        serial_write(proto_tag_hex);
+        serial_write("/");
+        serial_write(proto_error_hex);
+        serial_write("/");
+        serial_write(proto_type_hex);
         serial_write("\n");
 
         console_write("[INFO] filesystem: serial cmd fs-9p-stats submit/done(ok/err)=");
@@ -560,6 +576,14 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         console_write(submit_timeout_hex);
         console_write("/");
         console_write(submit_short_hex);
+        console_write(" proto(packet/tag/error/type)=");
+        console_write(proto_packet_hex);
+        console_write("/");
+        console_write(proto_tag_hex);
+        console_write("/");
+        console_write(proto_error_hex);
+        console_write("/");
+        console_write(proto_type_hex);
         console_write("\n");
         return true;
     }
