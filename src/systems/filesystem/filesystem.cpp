@@ -58,6 +58,13 @@ volatile uint64_t g_fs_virtio_9p_read_success_total = 0;
 volatile uint64_t g_fs_virtio_9p_read_done_total = 0;
 volatile uint64_t g_fs_virtio_9p_read_done_err_total = 0;
 volatile uint64_t g_fs_virtio_9p_share_experimental_mode = 0;
+volatile uint64_t g_fs_virtio_9p_done_bridge_ok_total = 0;
+volatile uint64_t g_fs_virtio_9p_done_bridge_err_total = 0;
+volatile uint64_t g_fs_virtio_9p_done_worker_ok_total = 0;
+volatile uint64_t g_fs_virtio_9p_done_worker_err_total = 0;
+volatile uint64_t g_fs_virtio_9p_enqueue_worker_total = 0;
+volatile uint64_t g_fs_virtio_9p_enqueue_worker_fail_total = 0;
+volatile uint64_t g_fs_virtio_9p_mode_blocked_total = 0;
 volatile uint32_t g_storage_head_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_storage_tail_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_storage_queue_high_water_by_cpu[kMaxCpus] = {};
@@ -662,11 +669,48 @@ void clear_virtio_9p_request_queue(void) {
 }
 
 bool schedule_virtio_9p_request_worker(void) {
+    __atomic_fetch_add(&g_fs_virtio_9p_enqueue_worker_total, 1, __ATOMIC_RELAXED);
     uint64_t target_cpu = 0;
     if (!pick_target_ap(&target_cpu)) {
+        __atomic_fetch_add(&g_fs_virtio_9p_enqueue_worker_fail_total, 1, __ATOMIC_RELAXED);
         return false;
     }
-    return scheduler_enqueue_ap_maintenance_job(target_cpu);
+    if (!scheduler_enqueue_ap_maintenance_job(target_cpu)) {
+        __atomic_fetch_add(&g_fs_virtio_9p_enqueue_worker_fail_total, 1, __ATOMIC_RELAXED);
+        return false;
+    }
+    return true;
+}
+
+void complete_virtio_9p_request(uint64_t slot,
+                                bool ok,
+                                uint64_t bytes,
+                                uint64_t checksum,
+                                bool worker_path,
+                                bool bridge_path) {
+    g_fs_virtio_9p_req_queue[slot].bytes = bytes;
+    g_fs_virtio_9p_req_queue[slot].checksum = checksum;
+    if (ok) {
+        __atomic_fetch_add(&g_fs_virtio_9p_read_success_total, 1, __ATOMIC_RELAXED);
+        if (worker_path) {
+            __atomic_fetch_add(&g_fs_virtio_9p_done_worker_ok_total, 1, __ATOMIC_RELAXED);
+        }
+        if (bridge_path) {
+            __atomic_fetch_add(&g_fs_virtio_9p_done_bridge_ok_total, 1, __ATOMIC_RELAXED);
+        }
+    } else {
+        __atomic_fetch_add(&g_fs_virtio_9p_read_done_err_total, 1, __ATOMIC_RELAXED);
+        if (worker_path) {
+            __atomic_fetch_add(&g_fs_virtio_9p_done_worker_err_total, 1, __ATOMIC_RELAXED);
+        }
+        if (bridge_path) {
+            __atomic_fetch_add(&g_fs_virtio_9p_done_bridge_err_total, 1, __ATOMIC_RELAXED);
+        }
+    }
+    __atomic_fetch_add(&g_fs_virtio_9p_read_done_total, 1, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_req_queue[slot].state,
+                     ok ? kFsVirtio9pReqStateDoneOk : kFsVirtio9pReqStateDoneErr,
+                     __ATOMIC_RELEASE);
 }
 
 void process_virtio_9p_head_requests_on_worker(void) {
@@ -687,17 +731,7 @@ void process_virtio_9p_head_requests_on_worker(void) {
                                                       g_fs_virtio_9p_req_queue[i].max_bytes,
                                                       &bytes,
                                                       &checksum);
-        g_fs_virtio_9p_req_queue[i].bytes = bytes;
-        g_fs_virtio_9p_req_queue[i].checksum = checksum;
-        if (ok) {
-            __atomic_fetch_add(&g_fs_virtio_9p_read_success_total, 1, __ATOMIC_RELAXED);
-        } else {
-            __atomic_fetch_add(&g_fs_virtio_9p_read_done_err_total, 1, __ATOMIC_RELAXED);
-        }
-        __atomic_fetch_add(&g_fs_virtio_9p_read_done_total, 1, __ATOMIC_RELAXED);
-        __atomic_store_n(&g_fs_virtio_9p_req_queue[i].state,
-                         ok ? kFsVirtio9pReqStateDoneOk : kFsVirtio9pReqStateDoneErr,
-                         __ATOMIC_RELEASE);
+        complete_virtio_9p_request(i, ok, bytes, checksum, true, false);
         return;
     }
 }
@@ -1780,6 +1814,13 @@ bool filesystem_init(void) {
     __atomic_store_n(&g_fs_virtio_9p_read_done_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_read_done_err_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_share_experimental_mode, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_done_bridge_ok_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_done_bridge_err_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_done_worker_ok_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_done_worker_err_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_enqueue_worker_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_enqueue_worker_fail_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_mode_blocked_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_req_next_id, 0, __ATOMIC_RELAXED);
     reset_virtio_9p_transport_state();
     clear_virtio_9p_request_queue();
@@ -2108,7 +2149,9 @@ bool filesystem_virtio_9p_head_request_submit(const char *path,
 #if FORTIFY_QEMU_SHARE_ENABLE
         if (__atomic_load_n(&g_fs_virtio_9p_share_experimental_mode, __ATOMIC_RELAXED) != 0) {
             __atomic_store_n(&g_fs_virtio_9p_req_queue[i].state, kFsVirtio9pReqStatePending, __ATOMIC_RELEASE);
-            (void)schedule_virtio_9p_request_worker();
+            if (!schedule_virtio_9p_request_worker()) {
+                complete_virtio_9p_request(i, false, 0, 0, false, false);
+            }
             *out_request_id = req_id;
             return true;
         }
@@ -2116,26 +2159,16 @@ bool filesystem_virtio_9p_head_request_submit(const char *path,
         uint64_t bytes = 0;
         uint64_t checksum = 0;
         const bool ok = bridge_readme_head(max_bytes, &bytes, &checksum);
-        g_fs_virtio_9p_req_queue[i].bytes = bytes;
-        g_fs_virtio_9p_req_queue[i].checksum = checksum;
-        if (ok) {
-            __atomic_fetch_add(&g_fs_virtio_9p_read_success_total, 1, __ATOMIC_RELAXED);
-        } else {
-            __atomic_fetch_add(&g_fs_virtio_9p_read_done_err_total, 1, __ATOMIC_RELAXED);
-        }
-        __atomic_fetch_add(&g_fs_virtio_9p_read_done_total, 1, __ATOMIC_RELAXED);
-        __atomic_store_n(&g_fs_virtio_9p_req_queue[i].state,
-                         ok ? kFsVirtio9pReqStateDoneOk : kFsVirtio9pReqStateDoneErr,
-                         __ATOMIC_RELEASE);
+        complete_virtio_9p_request(i, ok, bytes, checksum, false, true);
         *out_request_id = req_id;
         return true;
 #endif
-        __atomic_fetch_add(&g_fs_virtio_9p_read_done_err_total, 1, __ATOMIC_RELAXED);
-        __atomic_fetch_add(&g_fs_virtio_9p_read_done_total, 1, __ATOMIC_RELAXED);
-        __atomic_store_n(&g_fs_virtio_9p_req_queue[i].state, kFsVirtio9pReqStateDoneErr, __ATOMIC_RELEASE);
+        complete_virtio_9p_request(i, false, 0, 0, false, false);
 #else
         __atomic_store_n(&g_fs_virtio_9p_req_queue[i].state, kFsVirtio9pReqStatePending, __ATOMIC_RELEASE);
-        (void)schedule_virtio_9p_request_worker();
+        if (!schedule_virtio_9p_request_worker()) {
+            complete_virtio_9p_request(i, false, 0, 0, false, false);
+        }
 #endif
         *out_request_id = req_id;
         return true;
@@ -2204,9 +2237,38 @@ uint64_t filesystem_virtio_9p_head_request_running_total(void) {
     return total;
 }
 
+uint64_t filesystem_virtio_9p_head_request_done_bridge_ok_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_done_bridge_ok_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_head_request_done_bridge_err_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_done_bridge_err_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_head_request_done_worker_ok_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_done_worker_ok_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_head_request_done_worker_err_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_done_worker_err_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_head_request_enqueue_worker_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_enqueue_worker_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_head_request_enqueue_worker_fail_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_enqueue_worker_fail_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_mode_blocked_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_mode_blocked_total, __ATOMIC_RELAXED);
+}
+
 bool filesystem_set_virtio_9p_share_experimental_mode(bool enabled) {
 #if FORTIFY_QEMU_SHARE_ENABLE
     if (enabled) {
+        __atomic_fetch_add(&g_fs_virtio_9p_mode_blocked_total, 1, __ATOMIC_RELAXED);
         __atomic_store_n(&g_fs_virtio_9p_share_experimental_mode, 0, __ATOMIC_RELAXED);
         return false;
     }

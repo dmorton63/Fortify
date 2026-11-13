@@ -461,12 +461,26 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         char done_err_hex[19];
         char pending_hex[19];
         char running_hex[19];
+        char bridge_ok_hex[19];
+        char bridge_err_hex[19];
+        char worker_ok_hex[19];
+        char worker_err_hex[19];
+        char enqueue_hex[19];
+        char enqueue_fail_hex[19];
+        char mode_block_hex[19];
         kernel_format_hex64(submit_hex, filesystem_virtio_9p_head_request_submit_total());
         kernel_format_hex64(done_hex, filesystem_virtio_9p_head_request_done_total());
         kernel_format_hex64(done_ok_hex, filesystem_virtio_9p_head_request_done_ok_total());
         kernel_format_hex64(done_err_hex, filesystem_virtio_9p_head_request_done_err_total());
         kernel_format_hex64(pending_hex, filesystem_virtio_9p_head_request_pending_total());
         kernel_format_hex64(running_hex, filesystem_virtio_9p_head_request_running_total());
+        kernel_format_hex64(bridge_ok_hex, filesystem_virtio_9p_head_request_done_bridge_ok_total());
+        kernel_format_hex64(bridge_err_hex, filesystem_virtio_9p_head_request_done_bridge_err_total());
+        kernel_format_hex64(worker_ok_hex, filesystem_virtio_9p_head_request_done_worker_ok_total());
+        kernel_format_hex64(worker_err_hex, filesystem_virtio_9p_head_request_done_worker_err_total());
+        kernel_format_hex64(enqueue_hex, filesystem_virtio_9p_head_request_enqueue_worker_total());
+        kernel_format_hex64(enqueue_fail_hex, filesystem_virtio_9p_head_request_enqueue_worker_fail_total());
+        kernel_format_hex64(mode_block_hex, filesystem_virtio_9p_mode_blocked_total());
 
         serial_write("[INFO] filesystem: serial cmd fs-9p-stats submit/done(ok/err)=");
         serial_write(submit_hex);
@@ -480,6 +494,20 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         serial_write(pending_hex);
         serial_write("/");
         serial_write(running_hex);
+        serial_write(" path(bridge ok/err worker ok/err)=");
+        serial_write(bridge_ok_hex);
+        serial_write("/");
+        serial_write(bridge_err_hex);
+        serial_write(" ");
+        serial_write(worker_ok_hex);
+        serial_write("/");
+        serial_write(worker_err_hex);
+        serial_write(" enqueue(req/fail)=");
+        serial_write(enqueue_hex);
+        serial_write("/");
+        serial_write(enqueue_fail_hex);
+        serial_write(" mode-block=");
+        serial_write(mode_block_hex);
         serial_write("\n");
 
         console_write("[INFO] filesystem: serial cmd fs-9p-stats submit/done(ok/err)=");
@@ -494,6 +522,20 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         console_write(pending_hex);
         console_write("/");
         console_write(running_hex);
+        console_write(" path(bridge ok/err worker ok/err)=");
+        console_write(bridge_ok_hex);
+        console_write("/");
+        console_write(bridge_err_hex);
+        console_write(" ");
+        console_write(worker_ok_hex);
+        console_write("/");
+        console_write(worker_err_hex);
+        console_write(" enqueue(req/fail)=");
+        console_write(enqueue_hex);
+        console_write("/");
+        console_write(enqueue_fail_hex);
+        console_write(" mode-block=");
+        console_write(mode_block_hex);
         console_write("\n");
         return true;
     }

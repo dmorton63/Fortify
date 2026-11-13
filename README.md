@@ -289,7 +289,7 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `fs-9p-mode [safe|experimental]` (show/set share-mode 9p execution mode; default `safe`; `experimental` is currently blocked in share builds by a lock-guard and reports a warning)
 - `fs-9p-head <path> [max-bytes]` (queue an async virtio-9p head read request; max defaults to 256, caps at 2048)
 - `fs-9p-head-status <request-id>` (check queued virtio-9p request status: pending/running/done-ok/done-err with bytes/checksum)
-- `fs-9p-stats` (print compact virtio-9p head-request telemetry: submit/done split by ok/err and pending/running state counts)
+- `fs-9p-stats` (print compact virtio-9p head-request telemetry: submit/done split by ok/err, pending/running state counts, completion path split, enqueue stats, and mode-block count)
 - `fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks]` (queue one virtio-9p head request and return immediately; completion logs asynchronously as done-ok/done-err/timeout; defaults: max `256`, timeout `600` ticks; with `QEMU_SHARE_ENABLE=1`, requests are safety-gated to avoid AP-worker lockups; when `SHARE_README_BRIDGE=1`, requests use a safe bridge-blob fallback and can report `done-ok`)
 - `surface-create <type> <title>` (create a compositor-owned surface; type: `desktop|application|document|workspace|dashboard|tool`; title is a single token, use `_` for spaces)
 - `surface-ls` (list compositor surfaces with id/type/state/layer/position/size/title)
@@ -420,7 +420,7 @@ Virtio-9p head-request vertical-slice quick checks:
   - safe-mode behavior with `QEMU_SHARE_ENABLE=1`: with `SHARE_README_BRIDGE=1`, requests use a safe bridge-blob fallback (`done-ok` when blob is non-empty), otherwise requests complete as `done-err`
   - failure mode when transport is absent: `fail no-device probes/devices=.../...`
 - `fs-9p-stats`
-  - expected immediate log: one compact filesystem line with submit/done(ok/err) and state(pending/running) counters
+  - expected immediate log: one compact filesystem line with submit/done(ok/err), state(pending/running), path(bridge ok/err worker ok/err), enqueue(req/fail), and mode-block counters
   - expected behavior after smoke completion: done counters advance, pending/running return toward `0`
 
 AP migration-proof quick checks:
