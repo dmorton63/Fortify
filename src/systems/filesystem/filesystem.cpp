@@ -60,6 +60,7 @@ volatile uint64_t g_fs_virtio_9p_read_done_err_total = 0;
 volatile uint64_t g_fs_virtio_9p_share_experimental_mode = 0;
 volatile uint64_t g_fs_virtio_9p_done_bridge_ok_total = 0;
 volatile uint64_t g_fs_virtio_9p_done_bridge_err_total = 0;
+volatile uint64_t g_fs_virtio_9p_bridge_empty_total = 0;
 volatile uint64_t g_fs_virtio_9p_done_worker_ok_total = 0;
 volatile uint64_t g_fs_virtio_9p_done_worker_err_total = 0;
 volatile uint64_t g_fs_virtio_9p_enqueue_worker_total = 0;
@@ -646,6 +647,7 @@ bool bridge_readme_head(uint64_t max_bytes, uint64_t *out_bytes, uint64_t *out_c
     }
     const uint64_t blob_len = static_cast<uint64_t>(fortify_share_readme_blob_len);
     if (blob_len == 0) {
+        __atomic_fetch_add(&g_fs_virtio_9p_bridge_empty_total, 1, __ATOMIC_RELAXED);
         return false;
     }
     uint64_t bytes = blob_len;
@@ -1833,6 +1835,7 @@ bool filesystem_init(void) {
     __atomic_store_n(&g_fs_virtio_9p_share_experimental_mode, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_done_bridge_ok_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_done_bridge_err_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_bridge_empty_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_done_worker_ok_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_done_worker_err_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_enqueue_worker_total, 0, __ATOMIC_RELAXED);
@@ -2280,6 +2283,10 @@ uint64_t filesystem_virtio_9p_head_request_done_bridge_err_total(void) {
     return __atomic_load_n(&g_fs_virtio_9p_done_bridge_err_total, __ATOMIC_RELAXED);
 }
 
+uint64_t filesystem_virtio_9p_bridge_empty_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_bridge_empty_total, __ATOMIC_RELAXED);
+}
+
 uint64_t filesystem_virtio_9p_head_request_done_worker_ok_total(void) {
     return __atomic_load_n(&g_fs_virtio_9p_done_worker_ok_total, __ATOMIC_RELAXED);
 }
@@ -2350,6 +2357,7 @@ bool filesystem_virtio_9p_head_request_reset_stats(uint64_t *active_requests) {
     __atomic_store_n(&g_fs_virtio_9p_read_done_err_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_done_bridge_ok_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_done_bridge_err_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_bridge_empty_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_done_worker_ok_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_done_worker_err_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_enqueue_worker_total, 0, __ATOMIC_RELAXED);

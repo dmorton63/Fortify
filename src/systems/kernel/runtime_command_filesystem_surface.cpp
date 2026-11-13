@@ -464,6 +464,7 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         char claimed_hex[19];
         char bridge_ok_hex[19];
         char bridge_err_hex[19];
+        char bridge_empty_hex[19];
         char worker_ok_hex[19];
         char worker_err_hex[19];
         char enqueue_hex[19];
@@ -485,6 +486,7 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         kernel_format_hex64(claimed_hex, filesystem_virtio_9p_head_request_claimed_total());
         kernel_format_hex64(bridge_ok_hex, filesystem_virtio_9p_head_request_done_bridge_ok_total());
         kernel_format_hex64(bridge_err_hex, filesystem_virtio_9p_head_request_done_bridge_err_total());
+        kernel_format_hex64(bridge_empty_hex, filesystem_virtio_9p_bridge_empty_total());
         kernel_format_hex64(worker_ok_hex, filesystem_virtio_9p_head_request_done_worker_ok_total());
         kernel_format_hex64(worker_err_hex, filesystem_virtio_9p_head_request_done_worker_err_total());
         kernel_format_hex64(enqueue_hex, filesystem_virtio_9p_head_request_enqueue_worker_total());
@@ -516,6 +518,8 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         serial_write(bridge_ok_hex);
         serial_write("/");
         serial_write(bridge_err_hex);
+        serial_write(" empty=");
+        serial_write(bridge_empty_hex);
         serial_write(" ");
         serial_write(worker_ok_hex);
         serial_write("/");
@@ -560,6 +564,8 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         console_write(bridge_ok_hex);
         console_write("/");
         console_write(bridge_err_hex);
+        console_write(" empty=");
+        console_write(bridge_empty_hex);
         console_write(" ");
         console_write(worker_ok_hex);
         console_write("/");

@@ -202,6 +202,7 @@ uint64_t filesystem_virtio_9p_head_request_running_total(void);
 uint64_t filesystem_virtio_9p_head_request_claimed_total(void);
 uint64_t filesystem_virtio_9p_head_request_done_bridge_ok_total(void);
 uint64_t filesystem_virtio_9p_head_request_done_bridge_err_total(void);
+uint64_t filesystem_virtio_9p_bridge_empty_total(void);
 uint64_t filesystem_virtio_9p_head_request_done_worker_ok_total(void);
 uint64_t filesystem_virtio_9p_head_request_done_worker_err_total(void);
 uint64_t filesystem_virtio_9p_head_request_enqueue_worker_total(void);
