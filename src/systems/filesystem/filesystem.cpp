@@ -2237,6 +2237,17 @@ uint64_t filesystem_virtio_9p_head_request_running_total(void) {
     return total;
 }
 
+uint64_t filesystem_virtio_9p_head_request_claimed_total(void) {
+    uint64_t total = 0;
+    for (uint64_t i = 0; i < kFsVirtio9pReqQueueCap; i++) {
+        if (__atomic_load_n(&g_fs_virtio_9p_req_queue[i].state, __ATOMIC_ACQUIRE) ==
+            kFsVirtio9pReqStateClaimed) {
+            total++;
+        }
+    }
+    return total;
+}
+
 uint64_t filesystem_virtio_9p_head_request_done_bridge_ok_total(void) {
     return __atomic_load_n(&g_fs_virtio_9p_done_bridge_ok_total, __ATOMIC_RELAXED);
 }
