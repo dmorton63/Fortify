@@ -65,6 +65,9 @@ volatile uint64_t g_fs_virtio_9p_done_worker_err_total = 0;
 volatile uint64_t g_fs_virtio_9p_enqueue_worker_total = 0;
 volatile uint64_t g_fs_virtio_9p_enqueue_worker_fail_total = 0;
 volatile uint64_t g_fs_virtio_9p_mode_blocked_total = 0;
+volatile uint64_t g_fs_virtio_9p_submit_invalid_total = 0;
+volatile uint64_t g_fs_virtio_9p_submit_timeout_total = 0;
+volatile uint64_t g_fs_virtio_9p_submit_short_response_total = 0;
 volatile uint32_t g_storage_head_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_storage_tail_by_cpu[kMaxCpus] = {};
 volatile uint32_t g_storage_queue_high_water_by_cpu[kMaxCpus] = {};
@@ -741,6 +744,7 @@ bool virtio_9p_submit_request(const uint8_t *request, uint32_t request_len,
                               uint32_t *out_response_len) {
     if (!g_virtio_9p_transport.ready || request == 0 || request_len == 0 || response == 0 ||
         response_cap < 7 || out_response_len == 0) {
+        __atomic_fetch_add(&g_fs_virtio_9p_submit_invalid_total, 1, __ATOMIC_RELAXED);
         return false;
     }
 
@@ -781,6 +785,7 @@ bool virtio_9p_submit_request(const uint8_t *request, uint32_t request_len,
     uint32_t spin_limit = 200000;
     while (load_le16_volatile(used_base, 2) != expected) {
         if ((timer_ticks() - start_tick) > timeout_ticks || spin_limit-- == 0) {
+            __atomic_fetch_add(&g_fs_virtio_9p_submit_timeout_total, 1, __ATOMIC_RELAXED);
             return false;
         }
         __asm__ volatile ("pause");
@@ -793,7 +798,11 @@ bool virtio_9p_submit_request(const uint8_t *request, uint32_t request_len,
         response[i] = g_virtio_9p_transport.response_virt[i];
     }
     *out_response_len = copy_len;
-    return copy_len >= 7;
+    if (copy_len < 7) {
+        __atomic_fetch_add(&g_fs_virtio_9p_submit_short_response_total, 1, __ATOMIC_RELAXED);
+        return false;
+    }
+    return true;
 }
 
 bool virtio_9p_send_simple_request(const uint8_t *request,
@@ -1821,6 +1830,9 @@ bool filesystem_init(void) {
     __atomic_store_n(&g_fs_virtio_9p_enqueue_worker_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_enqueue_worker_fail_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_mode_blocked_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_submit_invalid_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_submit_timeout_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_submit_short_response_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_req_next_id, 0, __ATOMIC_RELAXED);
     reset_virtio_9p_transport_state();
     clear_virtio_9p_request_queue();
@@ -2276,6 +2288,18 @@ uint64_t filesystem_virtio_9p_mode_blocked_total(void) {
     return __atomic_load_n(&g_fs_virtio_9p_mode_blocked_total, __ATOMIC_RELAXED);
 }
 
+uint64_t filesystem_virtio_9p_submit_invalid_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_submit_invalid_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_submit_timeout_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_submit_timeout_total, __ATOMIC_RELAXED);
+}
+
+uint64_t filesystem_virtio_9p_submit_short_response_total(void) {
+    return __atomic_load_n(&g_fs_virtio_9p_submit_short_response_total, __ATOMIC_RELAXED);
+}
+
 bool filesystem_virtio_9p_head_request_reset_stats(uint64_t *active_requests) {
     uint64_t active = 0;
     for (uint64_t i = 0; i < kFsVirtio9pReqQueueCap; i++) {
@@ -2303,6 +2327,9 @@ bool filesystem_virtio_9p_head_request_reset_stats(uint64_t *active_requests) {
     __atomic_store_n(&g_fs_virtio_9p_enqueue_worker_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_enqueue_worker_fail_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_mode_blocked_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_submit_invalid_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_submit_timeout_total, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&g_fs_virtio_9p_submit_short_response_total, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&g_fs_virtio_9p_req_next_id, 0, __ATOMIC_RELAXED);
     clear_virtio_9p_request_queue();
     return true;
