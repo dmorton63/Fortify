@@ -26,6 +26,10 @@ static inline void kernel_out16(uint16_t port, uint16_t value) {
     __asm__ volatile ("outw %0, %1" : : "a"(value), "Nd"(port));
 }
 
+static inline void kernel_out32(uint16_t port, uint32_t value) {
+    __asm__ volatile ("outl %0, %1" : : "a"(value), "Nd"(port));
+}
+
 [[noreturn]] static void kernel_halt_forever(void) {
     __asm__ volatile ("cli");
     while (true) {
@@ -33,12 +37,18 @@ static inline void kernel_out16(uint16_t port, uint16_t value) {
     }
 }
 
+[[noreturn]] static void kernel_qemu_debug_exit(uint32_t code) {
+    kernel_out32(0xF4, code);
+    kernel_halt_forever();
+}
+
 [[noreturn]] static void kernel_shutdown_now(void) {
     // QEMU/ACPI poweroff ports (q35/pc and compatibility fallbacks).
     kernel_out16(0x604, 0x2000);
     kernel_out16(0xB004, 0x2000);
     kernel_out16(0x4004, 0x3400);
-    kernel_halt_forever();
+    // Deterministic fallback when ACPI poweroff is unavailable.
+    kernel_qemu_debug_exit(0);
 }
 
 static void log_ap_trigger_command_help(void) {
@@ -352,7 +362,7 @@ static void handle_serial_runtime_command(const char *command) {
     if (kernel_string_equals(command, "halt")) {
         serial_write("[INFO] smp: serial cmd halt halting CPUs\n");
         console_write("[INFO] smp: serial cmd halt halting CPUs\n");
-        kernel_halt_forever();
+        kernel_qemu_debug_exit(0);
     }
     if (kernel_string_equals(command, "ap-trigger")) {
         char profile_hex[19];

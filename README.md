@@ -192,6 +192,8 @@ And pass additional QEMU arguments through `QEMU_EXTRA_FLAGS`:
 QEMU_EXTRA_FLAGS="-d int" make run
 ```
 
+By default, `make run` includes QEMU's `isa-debug-exit` device (`QEMU_EXIT_DEVICE_ENABLE=1`) so runtime `shutdown`/`poweroff`/`halt` commands can terminate the VM deterministically. Set `QEMU_EXIT_DEVICE_ENABLE=0` to disable this behavior.
+
 If interactive serial input is unavailable in your terminal, you can inject one or more
 runtime serial commands at launch:
 
@@ -240,8 +242,8 @@ The BSP heartbeat logs the active profile whenever it changes.
 
 While `make run` is active (`-serial stdio`), you can type runtime commands:
 
-- `shutdown` / `poweroff` (attempt ACPI/QEMU poweroff and stop execution)
-- `halt` (disable interrupts and halt CPUs in place)
+- `shutdown` / `poweroff` (attempt ACPI poweroff, then use QEMU debug-exit fallback to terminate the VM)
+- `halt` (terminate the VM via QEMU debug-exit fallback)
 - `ap-trigger` (show current profile)
 - `ap-trigger 0` (default)
 - `ap-trigger 1` (balanced)

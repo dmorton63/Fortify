@@ -7,6 +7,9 @@ QEMU_NET_ENABLE ?= 0
 QEMU_NET_DEVICE ?= e1000
 QEMU_NET_FLAGS_ENABLED := -netdev user,id=net0 -device $(QEMU_NET_DEVICE),netdev=net0
 QEMU_NET_FLAGS_DISABLED :=
+QEMU_EXIT_DEVICE_ENABLE ?= 1
+QEMU_EXIT_DEVICE_FLAGS_ENABLED := -device isa-debug-exit,iobase=0xf4,iosize=0x04
+QEMU_EXIT_DEVICE_FLAGS_DISABLED :=
 QEMU_EXTRA_FLAGS ?=
 QEMU_SERIAL_INPUT ?=
 QEMU_SERIAL_INPUT_DELAY ?= 2
@@ -28,6 +31,11 @@ ifeq ($(QEMU_SHARE_ENABLE),1)
 QEMU_SHARE_FLAGS := $(QEMU_SHARE_FLAGS_ENABLED)
 else
 QEMU_SHARE_FLAGS := $(QEMU_SHARE_FLAGS_DISABLED)
+endif
+ifeq ($(QEMU_EXIT_DEVICE_ENABLE),1)
+QEMU_EXIT_DEVICE_FLAGS := $(QEMU_EXIT_DEVICE_FLAGS_ENABLED)
+else
+QEMU_EXIT_DEVICE_FLAGS := $(QEMU_EXIT_DEVICE_FLAGS_DISABLED)
 endif
 XORRISO ?= xorriso
 LIMINE_DEPLOY ?= limine-deploy
@@ -268,6 +276,7 @@ run: image
 			-smp 8 \
 			$(QEMU_NET_FLAGS) \
 			$(QEMU_SHARE_FLAGS) \
+			$(QEMU_EXIT_DEVICE_FLAGS) \
 			$(QEMU_EXTRA_FLAGS) \
 			-serial stdio; \
 	else \
@@ -283,6 +292,7 @@ run: image
 				-smp 8 \
 				$(QEMU_NET_FLAGS) \
 				$(QEMU_SHARE_FLAGS) \
+				$(QEMU_EXIT_DEVICE_FLAGS) \
 				$(QEMU_EXTRA_FLAGS) \
 				-serial stdio; \
 			rc="$$?"; \
@@ -298,6 +308,7 @@ run: image
 				-smp 8 \
 				$(QEMU_NET_FLAGS) \
 				$(QEMU_SHARE_FLAGS) \
+				$(QEMU_EXIT_DEVICE_FLAGS) \
 				$(QEMU_EXTRA_FLAGS) \
 				-serial stdio; \
 		fi; \
