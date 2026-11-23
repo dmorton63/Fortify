@@ -349,14 +349,19 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
             console_write("[WARN] filesystem: serial cmd fs-9p-mode expects [safe|experimental]\n");
             return true;
         }
-        (void)filesystem_set_virtio_9p_share_experimental_mode(enabled);
+        const bool applied = filesystem_set_virtio_9p_share_experimental_mode(enabled);
+        if (!applied && enabled) {
+            serial_write("[WARN] filesystem: serial cmd fs-9p-mode experimental blocked in share builds (lock-guard active)\n");
+            console_write("[WARN] filesystem: serial cmd fs-9p-mode experimental blocked in share builds (lock-guard active)\n");
+            return true;
+        }
         serial_write("[INFO] filesystem: serial cmd fs-9p-mode set=");
         serial_write(enabled ? "experimental" : "safe");
-        serial_write(enabled ? " (guarded: BSP-only true virtio-9p probe path)\n"
+        serial_write(enabled ? " (warning: true virtio-9p execution may lock under share mode)\n"
                              : " (share-safe gating active)\n");
         console_write("[INFO] filesystem: serial cmd fs-9p-mode set=");
         console_write(enabled ? "experimental" : "safe");
-        console_write(enabled ? " (guarded: BSP-only true virtio-9p probe path)\n"
+        console_write(enabled ? " (warning: true virtio-9p execution may lock under share mode)\n"
                               : " (share-safe gating active)\n");
         return true;
     }

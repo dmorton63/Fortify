@@ -2175,10 +2175,10 @@ bool filesystem_virtio_9p_head_request_submit(const char *path,
         __atomic_fetch_add(&g_fs_virtio_9p_read_attempt_total, 1, __ATOMIC_RELAXED);
 #if FORTIFY_QEMU_SHARE_ENABLE
         if (__atomic_load_n(&g_fs_virtio_9p_share_experimental_mode, __ATOMIC_RELAXED) != 0) {
-            // Share-mode experimental path is guarded to run on the BSP call path,
-            // avoiding AP-worker scheduling while still exercising true 9P transport.
             __atomic_store_n(&g_fs_virtio_9p_req_queue[i].state, kFsVirtio9pReqStatePending, __ATOMIC_RELEASE);
-            process_virtio_9p_head_requests_on_worker();
+            if (!schedule_virtio_9p_request_worker()) {
+                complete_virtio_9p_request(i, false, 0, 0, false, false);
+            }
             *out_request_id = req_id;
             return true;
         }
@@ -2376,6 +2376,13 @@ bool filesystem_virtio_9p_head_request_reset_stats(uint64_t *active_requests) {
 }
 
 bool filesystem_set_virtio_9p_share_experimental_mode(bool enabled) {
+#if FORTIFY_QEMU_SHARE_ENABLE
+    if (enabled) {
+        __atomic_fetch_add(&g_fs_virtio_9p_mode_blocked_total, 1, __ATOMIC_RELAXED);
+        __atomic_store_n(&g_fs_virtio_9p_share_experimental_mode, 0, __ATOMIC_RELAXED);
+        return false;
+    }
+#endif
     __atomic_store_n(&g_fs_virtio_9p_share_experimental_mode, enabled ? 1ULL : 0ULL, __ATOMIC_RELAXED);
     return true;
 }

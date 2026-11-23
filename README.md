@@ -290,12 +290,12 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `fs-root-ls [source]` (list FAT32 root entries from source `1` by default; optional source `0..255`)
 - `fs-root-head <name.EXT> [source]` (read up to 256 bytes from a FAT32 root file head and log byte count/checksum)
 - `fs-9p-probe` (re-probe PCI for virtio-9p transport and log device count + last BDF/device id)
-- `fs-9p-mode [safe|experimental]` (show/set share-mode 9p execution mode; default `safe`; `experimental` enables a guarded BSP-only true virtio-9p probe path)
+- `fs-9p-mode [safe|experimental]` (show/set share-mode 9p execution mode; default `safe`; `experimental` is currently blocked in share builds by a lock-guard and reports a warning)
 - `fs-9p-head <path> [max-bytes]` (queue an async virtio-9p head read request; max defaults to 256, caps at 2048)
 - `fs-9p-head-status <request-id>` (check queued virtio-9p request status: pending/running/done-ok/done-err with bytes/checksum)
 - `fs-9p-stats` (print compact virtio-9p head-request telemetry: submit/done split by ok/err, pending/running/claimed state counts, completion path split including bridge-empty count, enqueue stats, mode-block count, transport submit failure counters, and protocol validation failure counters)
 - `fs-9p-reset-stats` (reset fs-9p head-request telemetry and request queue ids; blocked while active requests are pending/running/claimed)
-- `fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks]` (queue one virtio-9p head request and return immediately; completion logs asynchronously as done-ok/done-err/timeout; defaults: max `256`, timeout `600` ticks; with `QEMU_SHARE_ENABLE=1`, safe mode uses bridge-blob fallback; `experimental` uses guarded BSP-only true virtio-9p path)
+- `fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks]` (queue one virtio-9p head request and return immediately; completion logs asynchronously as done-ok/done-err/timeout; defaults: max `256`, timeout `600` ticks; with `QEMU_SHARE_ENABLE=1`, requests are safety-gated to avoid AP-worker lockups; when `SHARE_README_BRIDGE=1`, requests use a safe bridge-blob fallback and can report `done-ok`)
 - `surface-create <type> <title>` (create a compositor-owned surface; type: `desktop|application|document|workspace|dashboard|tool`; title is a single token, use `_` for spaces)
 - `surface-ls` (list compositor surfaces with id/type/state/layer/position/size/title)
 - `rmsg-profile [balanced|stress|quiet]` (show/set runtime-message router test profile: backlog warning depth/debounce, backlog-test pause ticks, and smoke-extended backlog count)
@@ -421,7 +421,7 @@ Virtio-9p head-request vertical-slice quick checks:
   - expected immediate log: `armed id=... timeout=... (result logs asynchronously)`
   - expected completion log: `pass id=... state=done-ok bytes=... checksum=... elapsed=... timeout=... tick-stall=0`
   - expected behavior: with virtio-9p transport present, request submits successfully and reports deterministic byte/checksum telemetry without blocking command handling
-  - share-mode guardrail: `fs-9p-mode` defaults to `safe` (bridge fallback path); `fs-9p-mode experimental` enables guarded BSP-only true virtio-9p transport execution
+  - share-mode guardrail: `fs-9p-mode` defaults to `safe` (safety-gated path to avoid AP-worker lockups); `fs-9p-mode experimental` is currently blocked in share builds by a lock-guard
   - safe-mode behavior with `QEMU_SHARE_ENABLE=1`: with `SHARE_README_BRIDGE=1`, requests use a safe bridge-blob fallback (`done-ok` when blob is non-empty), otherwise requests complete as `done-err`
   - failure mode when transport is absent: `fail no-device probes/devices=.../...`
 - `fs-9p-stats`
