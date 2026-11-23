@@ -22,8 +22,27 @@ static uint64_t g_runtime_router_dequeue_pause_until_tick = 0;
 static uint64_t g_runtime_backlog_test_pause_ticks = 300;
 static uint64_t g_runtime_smoke_extended_backlog_count = 16;
 
+static inline void kernel_out16(uint16_t port, uint16_t value) {
+    __asm__ volatile ("outw %0, %1" : : "a"(value), "Nd"(port));
+}
+
+[[noreturn]] static void kernel_halt_forever(void) {
+    __asm__ volatile ("cli");
+    while (true) {
+        __asm__ volatile ("hlt");
+    }
+}
+
+[[noreturn]] static void kernel_shutdown_now(void) {
+    // QEMU/ACPI poweroff ports (q35/pc and compatibility fallbacks).
+    kernel_out16(0x604, 0x2000);
+    kernel_out16(0xB004, 0x2000);
+    kernel_out16(0x4004, 0x3400);
+    kernel_halt_forever();
+}
+
 static void log_ap_trigger_command_help(void) {
-    log_info("smp: serial cmd: ap-trigger [0|1|2], ap-trigger, ap-stats, ap-task-start, ap-task-stop, ap-task-migrate [0|1], ap-migration-smoke [timeout-ticks], smp-log [default|quiet], smp-log-health [ticks], video-demo [0|1], video-style [0|1|2], video-speed <1..32>, video-font [0|1|2], video-text-scale <1..4>, input-kbd [0|1], net-rx-inject <count>, net-rx-stats, net-rx-smoke [count], net-rx-smoke-wait [count] [timeout-ticks], web-head <target> [max-bytes], web-head-status <request-id>, web-head-stats, web-head-smoke-wait <target> [max-bytes] [timeout-ticks], usb-inject <count>, usb-stats, usb-smoke [count], usb-smoke-wait [count] [timeout-ticks], storage-inject <count>, storage-stats, storage-smoke [count], storage-smoke-wait [count] [timeout-ticks], audio-inject <count>, audio-stats, audio-smoke [count], audio-smoke-wait [count] [timeout-ticks], webcam-inject <count>, webcam-stats, webcam-smoke [count], webcam-smoke-wait [count] [timeout-ticks], inject-all <count>, fs-root-ls [source], fs-root-head <name.EXT> [source], fs-9p-probe, fs-9p-mode [safe|experimental], fs-9p-head <path> [max-bytes], fs-9p-head-status <request-id>, fs-9p-stats, fs-9p-reset-stats, fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks], surface-create <type> <title>, surface-ls, rmsg-profile [balanced|stress|quiet], rmsg-stats, rmsg-verify, rmsg-drop-test <src|kbd|unroute>, rmsg-selftest, rmsg-reset-stats, rmsg-smoke, rmsg-smoke-extended, rmsg-backlog-test <count> [input|cmd|both], help");
+    log_info("smp: serial cmd: shutdown|poweroff, halt, ap-trigger [0|1|2], ap-trigger, ap-stats, ap-task-start, ap-task-stop, ap-task-migrate [0|1], ap-migration-smoke [timeout-ticks], smp-log [default|quiet], smp-log-health [ticks], video-demo [0|1], video-style [0|1|2], video-speed <1..32>, video-font [0|1|2], video-text-scale <1..4>, input-kbd [0|1], net-rx-inject <count>, net-rx-stats, net-rx-smoke [count], net-rx-smoke-wait [count] [timeout-ticks], web-head <target> [max-bytes], web-head-status <request-id>, web-head-stats, web-head-smoke-wait <target> [max-bytes] [timeout-ticks], usb-inject <count>, usb-stats, usb-smoke [count], usb-smoke-wait [count] [timeout-ticks], storage-inject <count>, storage-stats, storage-smoke [count], storage-smoke-wait [count] [timeout-ticks], audio-inject <count>, audio-stats, audio-smoke [count], audio-smoke-wait [count] [timeout-ticks], webcam-inject <count>, webcam-stats, webcam-smoke [count], webcam-smoke-wait [count] [timeout-ticks], inject-all <count>, fs-root-ls [source], fs-root-head <name.EXT> [source], fs-9p-probe, fs-9p-mode [safe|experimental], fs-9p-head <path> [max-bytes], fs-9p-head-status <request-id>, fs-9p-stats, fs-9p-reset-stats, fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks], surface-create <type> <title>, surface-ls, rmsg-profile [balanced|stress|quiet], rmsg-stats, rmsg-verify, rmsg-drop-test <src|kbd|unroute>, rmsg-selftest, rmsg-reset-stats, rmsg-smoke, rmsg-smoke-extended, rmsg-backlog-test <count> [input|cmd|both], help");
 }
 
 static void log_ap_stats_snapshot(void) {
@@ -324,6 +343,16 @@ static void handle_serial_runtime_command(const char *command) {
     if (kernel_string_equals(command, "help")) {
         log_ap_trigger_command_help();
         return;
+    }
+    if (kernel_string_equals(command, "shutdown") || kernel_string_equals(command, "poweroff")) {
+        serial_write("[INFO] smp: serial cmd shutdown powering off now\n");
+        console_write("[INFO] smp: serial cmd shutdown powering off now\n");
+        kernel_shutdown_now();
+    }
+    if (kernel_string_equals(command, "halt")) {
+        serial_write("[INFO] smp: serial cmd halt halting CPUs\n");
+        console_write("[INFO] smp: serial cmd halt halting CPUs\n");
+        kernel_halt_forever();
     }
     if (kernel_string_equals(command, "ap-trigger")) {
         char profile_hex[19];

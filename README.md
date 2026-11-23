@@ -240,6 +240,8 @@ The BSP heartbeat logs the active profile whenever it changes.
 
 While `make run` is active (`-serial stdio`), you can type runtime commands:
 
+- `shutdown` / `poweroff` (attempt ACPI/QEMU poweroff and stop execution)
+- `halt` (disable interrupts and halt CPUs in place)
 - `ap-trigger` (show current profile)
 - `ap-trigger 0` (default)
 - `ap-trigger 1` (balanced)
