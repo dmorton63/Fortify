@@ -677,7 +677,7 @@ void clear_virtio_9p_request_queue(void) {
     }
 }
 
-bool schedule_virtio_9p_request_worker(void) {
+[[maybe_unused]] bool schedule_virtio_9p_request_worker(void) {
     __atomic_fetch_add(&g_fs_virtio_9p_enqueue_worker_total, 1, __ATOMIC_RELAXED);
     uint64_t target_cpu = 0;
     if (!pick_target_ap(&target_cpu)) {
