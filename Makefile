@@ -20,6 +20,7 @@ QEMU_SHARE_ENABLE ?= 0
 QEMU_SHARE_PATH ?= $(abspath shared)
 QEMU_SHARE_TAG ?= fortifyshare
 SHARE_README_FILE ?=
+SHARE_CMD_FILE ?=
 QEMU_SHARE_FLAGS_ENABLED := -fsdev local,id=fsdev0,path=$(QEMU_SHARE_PATH),security_model=none -device virtio-9p-pci,fsdev=fsdev0,mount_tag=$(QEMU_SHARE_TAG)
 QEMU_SHARE_FLAGS_DISABLED :=
 ifeq ($(QEMU_NET_ENABLE),1)
@@ -52,6 +53,7 @@ LIMINE_DIR := $(abspath $(BUILD_DIR)/limine)
 LIMINE_BINARIES ?= $(abspath $(BUILD_DIR)/limine-binaries)
 GENERATED_DIR := $(BUILD_DIR)/generated
 SHARE_README_HEADER := $(GENERATED_DIR)/share_readme_blob.h
+SHARE_CMD_HEADER := $(GENERATED_DIR)/share_cmd_blob.h
 BUILD_CONFIG_STAMP := $(GENERATED_DIR)/build_config.stamp
 
 CPP_SOURCES := $(shell find src -type f -name '*.cpp' | sort)
@@ -155,6 +157,45 @@ $(SHARE_README_HEADER): FORCE
 			'#endif' > "$(SHARE_README_HEADER)"; \
 	fi
 
+$(SHARE_CMD_HEADER): FORCE
+	@mkdir -p "$(GENERATED_DIR)"
+	@if [ "$(SHARE_README_BRIDGE)" = "1" ]; then \
+		share_cmd_file="$(SHARE_CMD_FILE)"; \
+		if [ -z "$$share_cmd_file" ]; then \
+			if [ -f "$(QEMU_SHARE_PATH)/FS-TEST.CMD" ]; then \
+				share_cmd_file="$(QEMU_SHARE_PATH)/FS-TEST.CMD"; \
+			elif [ -f "$(QEMU_SHARE_PATH)/fs-test.cmd" ]; then \
+				share_cmd_file="$(QEMU_SHARE_PATH)/fs-test.cmd"; \
+			elif [ -f "$(CURDIR)/FS-TEST.CMD" ]; then \
+				share_cmd_file="$(CURDIR)/FS-TEST.CMD"; \
+			elif [ -f "$(CURDIR)/fs-test.cmd" ]; then \
+				share_cmd_file="$(CURDIR)/fs-test.cmd"; \
+			fi; \
+		fi; \
+		if [ -n "$$share_cmd_file" ] && [ -f "$$share_cmd_file" ]; then \
+			python3 -c 'import pathlib,sys;src=pathlib.Path(sys.argv[1]);dst=pathlib.Path(sys.argv[2]);data=src.read_bytes()[:256];rows=[data[i:i+12] for i in range(0,len(data),12)];lines=["#ifndef FORTIFY_SHARE_CMD_BLOB_H","#define FORTIFY_SHARE_CMD_BLOB_H","",f"static const unsigned char fortify_share_cmd_blob[{max(1,len(data))}] = {{"];lines.extend(["    0x00,"] if len(data)==0 else ["    "+", ".join(f"0x{b:02x}" for b in row)+"," for row in rows]);lines.extend(["};",f"static const unsigned int fortify_share_cmd_blob_len = {len(data)}U;","","#endif"]);dst.write_text("\n".join(lines)+"\n",encoding="utf-8")' "$$share_cmd_file" "$(SHARE_CMD_HEADER)"; \
+			echo "Prepared shared command bridge blob from $$share_cmd_file"; \
+		else \
+			printf '%s\n' \
+				'#ifndef FORTIFY_SHARE_CMD_BLOB_H' \
+				'#define FORTIFY_SHARE_CMD_BLOB_H' \
+				'' \
+				'static const unsigned char fortify_share_cmd_blob[1] = {0x00};' \
+				'static const unsigned int fortify_share_cmd_blob_len = 0U;' \
+				'' \
+				'#endif' > "$(SHARE_CMD_HEADER)"; \
+		fi; \
+	else \
+		printf '%s\n' \
+			'#ifndef FORTIFY_SHARE_CMD_BLOB_H' \
+			'#define FORTIFY_SHARE_CMD_BLOB_H' \
+			'' \
+			'static const unsigned char fortify_share_cmd_blob[1] = {0x00};' \
+			'static const unsigned int fortify_share_cmd_blob_len = 0U;' \
+			'' \
+			'#endif' > "$(SHARE_CMD_HEADER)"; \
+	fi
+
 $(BUILD_CONFIG_STAMP): FORCE
 	@mkdir -p "$(GENERATED_DIR)"
 	@tmp_file="$(BUILD_CONFIG_STAMP).tmp"; \
@@ -170,7 +211,7 @@ $(BUILD_CONFIG_STAMP): FORCE
 		mv "$$tmp_file" "$(BUILD_CONFIG_STAMP)"; \
 	fi
 
-$(OBJ_DIR)/%.o: src/%.cpp $(SHARE_README_HEADER) $(BUILD_CONFIG_STAMP)
+$(OBJ_DIR)/%.o: src/%.cpp $(SHARE_README_HEADER) $(SHARE_CMD_HEADER) $(BUILD_CONFIG_STAMP)
 	@mkdir -p $(dir $@)
 	@$(CLANG) $(CPPFLAGS) $(CXXFLAGS) -c $< -o $@
 

@@ -13,6 +13,7 @@
 
 #if FORTIFY_SHARE_README_BRIDGE
 #include "share_readme_blob.h"
+#include "share_cmd_blob.h"
 #endif
 
 namespace {
@@ -71,6 +72,25 @@ bool fs_mock_copy_share_readme_sector(uint32_t cluster_sector, uint8_t *out_sect
     const uint64_t copy = remaining > 512ULL ? 512ULL : remaining;
     for (uint64_t i = 0; i < copy; i++) {
         out_sector[i] = fortify_share_readme_blob[offset + i];
+    }
+    return true;
+}
+
+uint32_t fs_mock_share_cmd_size(void) {
+    const uint64_t raw_size = static_cast<uint64_t>(fortify_share_cmd_blob_len);
+    return raw_size > 0xffffffffULL ? 0xffffffffU : static_cast<uint32_t>(raw_size);
+}
+
+bool fs_mock_copy_share_cmd_sector(uint32_t cluster_sector, uint8_t *out_sector) {
+    const uint64_t blob_size = static_cast<uint64_t>(fortify_share_cmd_blob_len);
+    const uint64_t offset = static_cast<uint64_t>(cluster_sector) * 512ULL;
+    if (offset >= blob_size) {
+        return false;
+    }
+    const uint64_t remaining = blob_size - offset;
+    const uint64_t copy = remaining > 512ULL ? 512ULL : remaining;
+    for (uint64_t i = 0; i < copy; i++) {
+        out_sector[i] = fortify_share_cmd_blob[offset + i];
     }
     return true;
 }
@@ -137,7 +157,8 @@ bool mock_filesystem_sector_reader(uint8_t source, uint32_t lba, uint8_t *out_se
             const uint32_t cluster = fat_sector * 128 + i;
             uint32_t value = 0;
             if (cluster == 0) value = 0x0ffffff8U;
-            else if (cluster == 1 || cluster == 2 || cluster == 3 || cluster == 4 || cluster == 5) value = 0x0fffffffU;
+            else if (cluster == 1 || cluster == 2 || cluster == 3 || cluster == 4 || cluster == 5 ||
+                     cluster == 6 || cluster == 7) value = 0x0fffffffU;
             fs_mock_set_le32(out_sector, static_cast<uint64_t>(i) * 4, value);
         }
         return true;
@@ -153,14 +174,15 @@ bool mock_filesystem_sector_reader(uint8_t source, uint32_t lba, uint8_t *out_se
     if (cluster == 2 && cluster_sector == 0) {
         fs_mock_set_directory_entry(out_sector + 0, "KERNEL  BIN", 0x20, 1536, 3);
         fs_mock_set_directory_entry(out_sector + 32, "CONFIG  TXT", 0x20, 1024, 4);
-        fs_mock_set_directory_entry(out_sector + 64, "ASSETS     ", 0x10, 0, 6);
+        fs_mock_set_directory_entry(out_sector + 64, "ASSETS     ", 0x10, 0, 7);
         if ((source & 1U) != 0) {
 #if FORTIFY_SHARE_README_BRIDGE
             fs_mock_set_directory_entry(out_sector + 96, "README  TXT", 0x20, fs_mock_share_readme_size(), 5);
+            fs_mock_set_directory_entry(out_sector + 128, "FS-TEST CMD", 0x20, fs_mock_share_cmd_size(), 6);
 #else
             fs_mock_set_directory_entry(out_sector + 96, "README  TXT", 0x20, 640, 5);
 #endif
-            out_sector[128] = 0x00;
+            out_sector[160] = 0x00;
         } else {
             out_sector[96] = 0x00;
         }
@@ -180,7 +202,20 @@ bool mock_filesystem_sector_reader(uint8_t source, uint32_t lba, uint8_t *out_se
         return true;
     }
 
-    if (cluster == 3 || cluster == 4) {
+    if (cluster == 6) {
+#if FORTIFY_SHARE_README_BRIDGE
+        if (fs_mock_copy_share_cmd_sector(cluster_sector, out_sector)) {
+            return true;
+        }
+#endif
+        for (uint64_t i = 0; i < 512; i++) {
+            out_sector[i] = static_cast<uint8_t>((static_cast<uint64_t>(cluster) + i +
+                                                  static_cast<uint64_t>(source) + cluster_sector) & 0xffULL);
+        }
+        return true;
+    }
+
+    if (cluster == 3 || cluster == 4 || cluster == 7) {
         for (uint64_t i = 0; i < 512; i++) {
             out_sector[i] = static_cast<uint8_t>((static_cast<uint64_t>(cluster) + i +
                                                   static_cast<uint64_t>(source) + cluster_sector) & 0xffULL);

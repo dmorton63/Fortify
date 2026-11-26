@@ -184,7 +184,7 @@ To bridge a host `README.TXT` into the current filesystem read path (build-time 
 QEMU_SHARE_ENABLE=1 SHARE_README_BRIDGE=1 QEMU_SHARE_PATH=/absolute/path/to/share make run-stress
 ```
 
-This injects a README bridge blob (up to 4096 bytes) into the synthetic FAT32 `README.TXT` entry used by `fs-root-head README.TXT`, so you can validate end-to-end host-file ingestion before full 9p guest transport lands. Auto-detect checks `$(QEMU_SHARE_PATH)` first, then falls back to `$(CURDIR)` when the share path has no matching README file.
+This injects a README bridge blob (up to 4096 bytes) into the synthetic FAT32 `README.TXT` entry used by `fs-root-head README.TXT`, and injects a command bridge blob (up to 256 bytes) into `FS-TEST.CMD` for `run-cmd-file FS-TEST.CMD`. Auto-detect checks `$(QEMU_SHARE_PATH)` first, then falls back to `$(CURDIR)` (`SHARE_README_FILE`/`SHARE_CMD_FILE` can override file selection).
 
 And pass additional QEMU arguments through `QEMU_EXTRA_FLAGS`:
 
