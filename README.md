@@ -244,7 +244,7 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 
 - `shutdown` / `poweroff` (attempt ACPI poweroff, then use QEMU debug-exit fallback to terminate the VM)
 - `halt` (terminate the VM via QEMU debug-exit fallback)
-- `run-cmd-file <name.EXT> [source]` (load a FAT32 root file from source `1` by default and execute each non-empty line as a runtime command; supports `#` line comments and up to 32 commands per file)
+- `run-cmd-file <name.EXT> [source]` (load a FAT32 root file from source `1` by default and execute each non-empty line as a runtime command; supports `#` line comments and up to 32 commands per file; 8.3 names support `A-Z`, `0-9`, `_`, `-`)
 - `ap-trigger` (show current profile)
 - `ap-trigger 0` (default)
 - `ap-trigger 1` (balanced)

@@ -1463,7 +1463,7 @@ bool normalize_name_8dot3_to_entry11(const char *name_8dot3, char *out_name11) {
     uint64_t base = 0;
     while (name_8dot3[input] != '\0' && name_8dot3[input] != '.') {
         const uint8_t ch = to_upper_ascii(static_cast<uint8_t>(name_8dot3[input]));
-        if ((ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '_') {
+        if ((ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '_' && ch != '-') {
             return false;
         }
         if (base >= 8) {
@@ -1483,7 +1483,7 @@ bool normalize_name_8dot3_to_entry11(const char *name_8dot3, char *out_name11) {
     uint64_t ext = 0;
     while (name_8dot3[input] != '\0') {
         const uint8_t ch = to_upper_ascii(static_cast<uint8_t>(name_8dot3[input]));
-        if ((ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '_') {
+        if ((ch < 'A' || ch > 'Z') && (ch < '0' || ch > '9') && ch != '_' && ch != '-') {
             return false;
         }
         if (ext >= 3) {
