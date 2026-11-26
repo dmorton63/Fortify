@@ -594,6 +594,14 @@ const surface_info *find_surface_by_shell_region(surface_shell_region region) {
     return 0;
 }
 
+surface_shell_region focused_shell_region(void) {
+    compositor_surface_entry *focused = find_surface_by_id(g_focused_surface_id);
+    if (focused == 0) {
+        return surface_shell_region::none;
+    }
+    return focused->info.shell_region;
+}
+
 void draw_taskbar_slot(surface_shell_region region,
                        const char *label,
                        const char *value,
@@ -661,15 +669,28 @@ void draw_compositor_surface_cards(void) {
     if (cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = static_cast<char>('0' + ((secs / 10) % 10));
     if (cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = static_cast<char>('0' + (secs % 10));
     clock_text[cursor] = '\0';
+    const surface_shell_region focused_region = focused_shell_region();
 
     draw_taskbar_slot(surface_shell_region::taskbar_terminal,
                       "Terminal",
                       g_input_surface_draft,
-                      g_focused_surface_id == g_input_surface_id);
-    draw_taskbar_slot(surface_shell_region::taskbar_explorer, "Explorer", "Files", false);
-    draw_taskbar_slot(surface_shell_region::taskbar_tasks, "Tasks", g_command_center_status, false);
-    draw_taskbar_slot(surface_shell_region::taskbar_clock, "Clock", clock_text, false);
-    draw_taskbar_slot(surface_shell_region::taskbar_system, "System", "Settings v", false);
+                      focused_region == surface_shell_region::taskbar_terminal);
+    draw_taskbar_slot(surface_shell_region::taskbar_explorer,
+                      "Explorer",
+                      "Files",
+                      focused_region == surface_shell_region::taskbar_explorer);
+    draw_taskbar_slot(surface_shell_region::taskbar_tasks,
+                      "Tasks",
+                      g_command_center_status,
+                      focused_region == surface_shell_region::taskbar_tasks);
+    draw_taskbar_slot(surface_shell_region::taskbar_clock,
+                      "Clock",
+                      clock_text,
+                      focused_region == surface_shell_region::taskbar_clock);
+    draw_taskbar_slot(surface_shell_region::taskbar_system,
+                      "System",
+                      "Settings v",
+                      focused_region == surface_shell_region::taskbar_system);
 }
 
 void glyph_5x7(uint8_t c, uint8_t *rows) {
@@ -1237,12 +1258,15 @@ bool compositor_route_event(surface_event_type type, char value) {
     if (target == 0) {
         return false;
     }
-    g_focused_surface_id = target->info.id;
-
-    const bool input_surface_target =
+    const bool focused_input_surface =
         (target->info.id == g_input_surface_id) || surface_title_equals(target->info.title, "Input Surface");
-    if (!input_surface_target) {
-        return true;
+    if (focused_input_surface) {
+        g_focused_surface_id = target->info.id;
+    } else {
+        compositor_surface_entry *input_target = find_surface_by_id(g_input_surface_id);
+        if (input_target != 0) {
+            target = input_target;
+        }
     }
 
     if (type == surface_event_type::key_char) {
