@@ -262,7 +262,7 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `ap-migration-smoke [timeout-ticks]` (run deterministic AP-pinned migration validation and emit a one-line pass/fail summary with active/moves/mask/expected/elapsed; default timeout `6000` ticks)
 - `smp-log` / `smp-log default|quiet` (show/set periodic SMP observability verbosity; `quiet` suppresses heartbeat and per-CPU chatter while preserving command and self-test transition logs)
 - `smp-log-health` / `smp-log-health <ticks>` (show/set quiet-mode health snapshot interval in ticks; `0` disables quiet-mode health snapshots, default `3000`)
-- `video-demo` / `video-demo 1|0` (show/enable/disable animated software 3D panel; when disabled, compositor input/command surfaces remain active and continue updating)
+- `video-demo` / `video-demo 1|0` (legacy demo compatibility toggle; default desktop is now the static Citadel shell layout)
 - `video-style` / `video-style 0|1|2` (solid / wireframe / combined)
 - `video-speed` / `video-speed <1..32>` (frame-time aware rotation speed control)
 - `video-font` / `video-font 0|1|2` (text style: mono / bold / shadow)

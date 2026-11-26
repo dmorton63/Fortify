@@ -34,7 +34,7 @@ uint8_t *g_draw_base = 0;
 uint64_t g_draw_pitch = 0;
 bool g_double_buffer_enabled = false;
 bool g_video_ready = false;
-bool g_demo_enabled = true;
+bool g_demo_enabled = false;
 bool g_compositor_ready = false;
 uint64_t g_render_style = 2; // 0=solid, 1=wire, 2=both
 uint64_t g_spin_step = 1;
@@ -65,10 +65,10 @@ uint64_t g_input_surface_id = 0;
 uint64_t g_command_center_surface_id = 0;
 uint64_t g_focused_surface_id = 0;
 
-constexpr uint64_t kStyleSolid = 0;
-constexpr uint64_t kStyleWire = 1;
+[[maybe_unused]] constexpr uint64_t kStyleSolid = 0;
+[[maybe_unused]] constexpr uint64_t kStyleWire = 1;
 constexpr uint64_t kStyleBoth = 2;
-constexpr uint64_t kFontMono = 0;
+[[maybe_unused]] constexpr uint64_t kFontMono = 0;
 constexpr uint64_t kFontBold = 1;
 constexpr uint64_t kFontShadow = 2;
 constexpr uint64_t kGlyphW = 6;
@@ -109,13 +109,14 @@ uint32_t compose_rgb(uint8_t r, uint8_t g, uint8_t b);
 void fill_rect(int32_t x, int32_t y, int32_t w, int32_t h, uint32_t color);
 void draw_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color);
 void draw_text(int32_t x, int32_t y, const char *text, uint32_t fg, uint32_t bg);
+void u64_to_decimal(uint64_t value, char *out, uint64_t out_size);
 
-constexpr vec3 kCubeVertices[8] = {
+[[maybe_unused]] constexpr vec3 kCubeVertices[8] = {
     {-96, -96, -96}, {96, -96, -96}, {96, 96, -96}, {-96, 96, -96},
     {-96, -96, 96},  {96, -96, 96},  {96, 96, 96},  {-96, 96, 96},
 };
 
-constexpr face kCubeFaces[12] = {
+[[maybe_unused]] constexpr face kCubeFaces[12] = {
     {0, 1, 2, 180, 64, 255}, {0, 2, 3, 180, 64, 255},
     {4, 6, 5, 64, 190, 255}, {4, 7, 6, 64, 190, 255},
     {0, 3, 7, 80, 220, 160}, {0, 7, 4, 80, 220, 160},
@@ -543,7 +544,7 @@ void assign_surface_defaults(surface_type type, surface_info *info, uint64_t ord
     info->shell_flags = 0;
 }
 
-const char *surface_type_label(surface_type type) {
+[[maybe_unused]] const char *surface_type_label(surface_type type) {
     switch (type) {
         case surface_type::desktop: return "DESKTOP";
         case surface_type::application: return "APPLICATION";
@@ -555,7 +556,7 @@ const char *surface_type_label(surface_type type) {
     return "UNKNOWN";
 }
 
-const char *surface_state_label(surface_state state) {
+[[maybe_unused]] const char *surface_state_label(surface_state state) {
     switch (state) {
         case surface_state::floating: return "FLOATING";
         case surface_state::docked: return "DOCKED";
@@ -569,7 +570,7 @@ const char *surface_state_label(surface_state state) {
     return "UNKNOWN";
 }
 
-uint32_t surface_type_color(surface_type type) {
+[[maybe_unused]] uint32_t surface_type_color(surface_type type) {
     switch (type) {
         case surface_type::desktop: return compose_rgb(44, 78, 140);
         case surface_type::workspace: return compose_rgb(58, 108, 166);
@@ -581,183 +582,94 @@ uint32_t surface_type_color(surface_type type) {
     return compose_rgb(72, 116, 176);
 }
 
-void draw_compositor_surface_cards(void) {
-    if (g_fb == 0 || !g_compositor_ready) {
-        return;
-    }
-    uint64_t used_indices[kMaxSurfaces] = {};
-    uint64_t used_count = 0;
+const surface_info *find_surface_by_shell_region(surface_shell_region region) {
     for (uint64_t i = 0; i < kMaxSurfaces; i++) {
         if (!g_surfaces[i].used) {
             continue;
         }
-        used_indices[used_count++] = i;
-    }
-    for (uint64_t i = 1; i < used_count; i++) {
-        const uint64_t key = used_indices[i];
-        int64_t j = static_cast<int64_t>(i) - 1;
-        while (j >= 0) {
-            const surface_info &left = g_surfaces[used_indices[j]].info;
-            const surface_info &right = g_surfaces[key].info;
-            if (left.layer < right.layer || (left.layer == right.layer && left.id < right.id)) {
-                break;
-            }
-            used_indices[j + 1] = used_indices[j];
-            j--;
+        if (g_surfaces[i].info.shell_region == region) {
+            return &g_surfaces[i].info;
         }
-        used_indices[j + 1] = key;
     }
+    return 0;
+}
 
-    const int32_t pad = 12;
-    const int32_t panel_w = 360;
-    const int32_t panel_h = static_cast<int32_t>((kGlyphH * g_text_scale * 2) + 20 + (used_count * 48));
-    const int32_t panel_x = static_cast<int32_t>(g_fb->width > static_cast<uint64_t>(panel_w + pad)
-                                                     ? g_fb->width - static_cast<uint64_t>(panel_w + pad)
-                                                     : 0);
-    const int32_t panel_y = pad;
-    fill_rect(panel_x, panel_y, panel_w, panel_h, compose_rgb(12, 18, 34));
-    draw_line(panel_x, panel_y, panel_x + panel_w - 1, panel_y, compose_rgb(70, 122, 220));
-    draw_line(panel_x, panel_y + panel_h - 1, panel_x + panel_w - 1, panel_y + panel_h - 1, compose_rgb(70, 122, 220));
-    draw_line(panel_x, panel_y, panel_x, panel_y + panel_h - 1, compose_rgb(70, 122, 220));
-    draw_line(panel_x + panel_w - 1, panel_y, panel_x + panel_w - 1, panel_y + panel_h - 1, compose_rgb(70, 122, 220));
-    draw_text(panel_x + 8, panel_y + 6, "SURFACE COMPOSITOR", compose_rgb(238, 246, 255), compose_rgb(12, 18, 34));
-
-    const int32_t card_w = panel_w - 16;
-    const int32_t card_h = 40;
-    for (uint64_t i = 0; i < used_count; i++) {
-        const surface_info &info = g_surfaces[used_indices[i]].info;
-        const int32_t card_x = panel_x + 8;
-        const int32_t card_y = panel_y + 28 + static_cast<int32_t>(i * 48);
-        const uint32_t card_bg = compose_rgb(20, 28, 48);
-        const uint32_t accent = surface_type_color(info.type);
-        const bool focused = (info.id != 0 && info.id == g_focused_surface_id);
-        const uint32_t border = focused ? compose_rgb(124, 186, 255) : compose_rgb(58, 90, 152);
-        fill_rect(card_x, card_y, card_w, card_h, card_bg);
-        fill_rect(card_x, card_y, 5, card_h, accent);
-        draw_line(card_x, card_y, card_x + card_w - 1, card_y, border);
-        draw_line(card_x, card_y + card_h - 1, card_x + card_w - 1, card_y + card_h - 1, border);
-        draw_line(card_x, card_y, card_x, card_y + card_h - 1, border);
-        draw_line(card_x + card_w - 1, card_y, card_x + card_w - 1, card_y + card_h - 1, border);
-        draw_text(card_x + 10, card_y + 4, info.title, compose_rgb(232, 240, 255), card_bg);
-        draw_text(card_x + 10, card_y + 20, surface_type_label(info.type), compose_rgb(188, 208, 248), card_bg);
-        draw_text(card_x + 148, card_y + 20, surface_state_label(info.state), compose_rgb(178, 196, 228), card_bg);
+void draw_taskbar_slot(surface_shell_region region,
+                       const char *label,
+                       const char *value,
+                       bool focused) {
+    const surface_info *slot = find_surface_by_shell_region(region);
+    if (slot == 0) {
+        return;
     }
+    const int32_t x = slot->x;
+    const int32_t y = slot->y;
+    const int32_t w = static_cast<int32_t>(slot->width);
+    const int32_t h = static_cast<int32_t>(slot->height);
+    const uint32_t bg = focused ? compose_rgb(34, 70, 122) : compose_rgb(18, 36, 64);
+    const uint32_t border = focused ? compose_rgb(158, 204, 255) : compose_rgb(86, 132, 198);
+    fill_rect(x, y, w, h, bg);
+    draw_line(x, y, x + w - 1, y, border);
+    draw_line(x, y + h - 1, x + w - 1, y + h - 1, border);
+    draw_line(x, y, x, y + h - 1, border);
+    draw_line(x + w - 1, y, x + w - 1, y + h - 1, border);
+    draw_text(x + 10, y + 10, label, compose_rgb(226, 240, 255), bg);
+    draw_text(x + 10, y + 30, value, compose_rgb(188, 212, 244), bg);
+}
 
-    for (uint64_t i = 0; i < used_count; i++) {
-        const surface_info &info = g_surfaces[used_indices[i]].info;
-        if (!surface_title_equals(info.title, "Input Surface")) {
-            continue;
-        }
-        const int32_t input_x = info.x;
-        const int32_t input_y = info.y;
-        const int32_t input_w = static_cast<int32_t>(info.width);
-        const int32_t input_h = static_cast<int32_t>(info.height);
-        const uint32_t input_bg = compose_rgb(14, 24, 42);
-        fill_rect(input_x, input_y, input_w, input_h, input_bg);
-        draw_line(input_x, input_y, input_x + input_w - 1, input_y, compose_rgb(86, 140, 228));
-        draw_line(input_x, input_y + input_h - 1, input_x + input_w - 1, input_y + input_h - 1, compose_rgb(86, 140, 228));
-        draw_line(input_x, input_y, input_x, input_y + input_h - 1, compose_rgb(86, 140, 228));
-        draw_line(input_x + input_w - 1, input_y, input_x + input_w - 1, input_y + input_h - 1, compose_rgb(86, 140, 228));
-        const int32_t prompt_h = input_h > 20 ? (input_h - 20) : input_h;
-        const int32_t prompt_w = input_w > 20 ? (input_w - 20) : input_w;
-        fill_rect(input_x + 10, input_y + 10, prompt_w, prompt_h, compose_rgb(8, 16, 32));
-        draw_text(input_x + 16, input_y + 16, "INPUT>", compose_rgb(220, 234, 255), compose_rgb(8, 16, 32));
-        draw_text(input_x + 88, input_y + 16, g_input_surface_draft, compose_rgb(196, 218, 255), compose_rgb(8, 16, 32));
-        break;
+void draw_compositor_surface_cards(void) {
+    if (g_fb == 0 || !g_compositor_ready) {
+        return;
     }
+    const int32_t width = static_cast<int32_t>(g_fb->width);
+    const int32_t height = static_cast<int32_t>(g_fb->height);
+    const int32_t taskbar_h = static_cast<int32_t>(kShellTaskbarHeight + 20);
+    const int32_t desktop_h = height > taskbar_h ? (height - taskbar_h) : height;
 
-    for (uint64_t i = 0; i < used_count; i++) {
-        const surface_info &info = g_surfaces[used_indices[i]].info;
-        if (!surface_title_equals(info.title, "Command Center")) {
-            continue;
-        }
-        const int32_t center_x = info.x;
-        const int32_t center_y = info.y;
-        const int32_t center_w = static_cast<int32_t>(info.width);
-        const int32_t center_h = static_cast<int32_t>(info.height);
-        const uint32_t center_bg = compose_rgb(18, 20, 44);
-        fill_rect(center_x, center_y, center_w, center_h, center_bg);
-        draw_line(center_x, center_y, center_x + center_w - 1, center_y, compose_rgb(116, 116, 244));
-        draw_line(center_x, center_y + center_h - 1, center_x + center_w - 1, center_y + center_h - 1, compose_rgb(116, 116, 244));
-        draw_line(center_x, center_y, center_x, center_y + center_h - 1, compose_rgb(116, 116, 244));
-        draw_line(center_x + center_w - 1, center_y, center_x + center_w - 1, center_y + center_h - 1, compose_rgb(116, 116, 244));
-        draw_text(center_x + 12, center_y + 10, "COMMAND CENTER", compose_rgb(236, 236, 255), center_bg);
-        draw_text(center_x + 12, center_y + 30, "LAST", compose_rgb(192, 206, 255), center_bg);
-        draw_text(center_x + 56, center_y + 30, g_command_center_last_command, compose_rgb(226, 236, 255), center_bg);
-        draw_text(center_x + 12, center_y + 48, "STATUS", compose_rgb(192, 206, 255), center_bg);
-        draw_text(center_x + 76, center_y + 48, g_command_center_status, compose_rgb(206, 220, 255), center_bg);
-        const int32_t history_x = center_x + 10;
-        const int32_t history_y = center_y + 68;
-        const int32_t history_w = center_w - 20;
-        const int32_t history_h = center_h - 78;
-        fill_rect(history_x, history_y, history_w, history_h, compose_rgb(8, 16, 32));
-        draw_line(history_x, history_y, history_x + history_w - 1, history_y, compose_rgb(72, 96, 156));
-        draw_line(history_x,
-                  history_y + history_h - 1,
-                  history_x + history_w - 1,
-                  history_y + history_h - 1,
-                  compose_rgb(72, 96, 156));
-        draw_line(history_x, history_y, history_x, history_y + history_h - 1, compose_rgb(72, 96, 156));
-        draw_line(history_x + history_w - 1,
-                  history_y,
-                  history_x + history_w - 1,
-                  history_y + history_h - 1,
-                  compose_rgb(72, 96, 156));
-        const int32_t line_step = static_cast<int32_t>(kGlyphH * g_text_scale + 2);
-        const int32_t visible_rows = line_step > 0 ? ((history_h - 8) / line_step) : 0;
-        if (visible_rows > 0) {
-            const uint64_t visible = static_cast<uint64_t>(visible_rows);
-            uint64_t first_abs = 0;
-            if (g_command_center_history_count > visible + g_command_center_scroll_lines) {
-                first_abs = g_command_center_history_count - visible - g_command_center_scroll_lines;
-            }
-            const uint64_t oldest =
-                (g_command_center_history_head + kCommandCenterHistoryMaxLines - g_command_center_history_count) %
-                kCommandCenterHistoryMaxLines;
-            for (uint64_t row = 0; row < visible; row++) {
-                const uint64_t abs_index = first_abs + row;
-                if (abs_index >= g_command_center_history_count) {
-                    break;
-                }
-                const uint64_t slot = (oldest + abs_index) % kCommandCenterHistoryMaxLines;
-                draw_text(history_x + 6,
-                          history_y + 4 + static_cast<int32_t>(row) * line_step,
-                          g_command_center_history[slot],
-                          compose_rgb(188, 208, 244),
-                          compose_rgb(8, 16, 32));
-            }
-        }
-        if (g_command_center_history_count > 1) {
-            const int32_t bar_x = history_x + history_w - 8;
-            const int32_t bar_y = history_y + 2;
-            const int32_t bar_h = history_h - 4;
-            fill_rect(bar_x, bar_y, 4, bar_h, compose_rgb(24, 34, 52));
-            const uint64_t page = visible_rows > 0 ? static_cast<uint64_t>(visible_rows) : 1;
-            const uint64_t total = g_command_center_history_count;
-            uint64_t thumb_h = (page * static_cast<uint64_t>(bar_h)) / total;
-            if (thumb_h < 10) {
-                thumb_h = 10;
-            }
-            if (thumb_h > static_cast<uint64_t>(bar_h)) {
-                thumb_h = static_cast<uint64_t>(bar_h);
-            }
-            const uint64_t max_scroll = total > page ? (total - page) : 0;
-            uint64_t scroll = g_command_center_scroll_lines;
-            if (scroll > max_scroll) {
-                scroll = max_scroll;
-            }
-            uint64_t thumb_offset = 0;
-            if (max_scroll != 0 && static_cast<uint64_t>(bar_h) > thumb_h) {
-                thumb_offset = (scroll * (static_cast<uint64_t>(bar_h) - thumb_h)) / max_scroll;
-            }
-            fill_rect(bar_x,
-                      bar_y + static_cast<int32_t>(thumb_offset),
-                      4,
-                      static_cast<int32_t>(thumb_h),
-                      compose_rgb(116, 164, 248));
-        }
-        break;
+    fill_rect(0, 0, width, desktop_h, compose_rgb(10, 22, 38));
+    draw_line(0, desktop_h - 1, width - 1, desktop_h - 1, compose_rgb(58, 96, 152));
+    draw_text(20, 16, "FORTIFY CITADEL DESKTOP", compose_rgb(220, 236, 255), compose_rgb(10, 22, 38));
+    draw_text(20, 38, "Static layout active", compose_rgb(172, 202, 242), compose_rgb(10, 22, 38));
+
+    fill_rect(0, desktop_h, width, height - desktop_h, compose_rgb(8, 16, 30));
+    draw_line(0, desktop_h, width - 1, desktop_h, compose_rgb(92, 136, 208));
+
+    char clock_text[64];
+    const uint64_t seconds = timer_ticks() / 100;
+    const uint64_t days = seconds / 86400;
+    const uint64_t hours = (seconds / 3600) % 24;
+    const uint64_t minutes = (seconds / 60) % 60;
+    const uint64_t secs = seconds % 60;
+    clock_text[0] = '\0';
+    const char *prefix = "D";
+    uint64_t cursor = 0;
+    while (prefix[cursor] != '\0' && cursor + 1 < sizeof(clock_text)) {
+        clock_text[cursor] = prefix[cursor];
+        cursor++;
     }
+    char value[24];
+    u64_to_decimal(days, value, sizeof(value));
+    uint64_t i = 0;
+    while (value[i] != '\0' && cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = value[i++];
+    if (cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = ' ';
+    if (cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = static_cast<char>('0' + ((hours / 10) % 10));
+    if (cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = static_cast<char>('0' + (hours % 10));
+    if (cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = ':';
+    if (cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = static_cast<char>('0' + ((minutes / 10) % 10));
+    if (cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = static_cast<char>('0' + (minutes % 10));
+    if (cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = ':';
+    if (cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = static_cast<char>('0' + ((secs / 10) % 10));
+    if (cursor + 1 < sizeof(clock_text)) clock_text[cursor++] = static_cast<char>('0' + (secs % 10));
+    clock_text[cursor] = '\0';
+
+    draw_taskbar_slot(surface_shell_region::taskbar_terminal,
+                      "Terminal",
+                      g_input_surface_draft,
+                      g_focused_surface_id == g_input_surface_id);
+    draw_taskbar_slot(surface_shell_region::taskbar_explorer, "Explorer", "Files", false);
+    draw_taskbar_slot(surface_shell_region::taskbar_tasks, "Tasks", g_command_center_status, false);
+    draw_taskbar_slot(surface_shell_region::taskbar_clock, "Clock", clock_text, false);
+    draw_taskbar_slot(surface_shell_region::taskbar_system, "System", "Settings v", false);
 }
 
 void glyph_5x7(uint8_t c, uint8_t *rows) {
@@ -899,7 +811,7 @@ int64_t edge_function(const point2 &a, const point2 &b, const point2 &p) {
            static_cast<int64_t>(p.y - a.y) * static_cast<int64_t>(b.x - a.x);
 }
 
-void fill_triangle(const point2 &a, const point2 &b, const point2 &c, uint32_t color) {
+[[maybe_unused]] void fill_triangle(const point2 &a, const point2 &b, const point2 &c, uint32_t color) {
     int32_t min_x = min3(a.x, b.x, c.x);
     int32_t max_x = max3(a.x, b.x, c.x);
     int32_t min_y = min3(a.y, b.y, c.y);
@@ -998,7 +910,7 @@ void draw_text(int32_t x, int32_t y, const char *text, uint32_t fg, uint32_t bg)
     }
 }
 
-int32_t tri_wave_q15(uint64_t phase) {
+[[maybe_unused]] int32_t tri_wave_q15(uint64_t phase) {
     const uint64_t p = phase & 0xffULL;
     if (p < 64) return static_cast<int32_t>(p) * 512;
     if (p < 128) return static_cast<int32_t>(128 - p) * 512;
@@ -1006,7 +918,7 @@ int32_t tri_wave_q15(uint64_t phase) {
     return -static_cast<int32_t>(256 - p) * 512;
 }
 
-uint64_t phase_base_for_tick(uint64_t tick) {
+[[maybe_unused]] uint64_t phase_base_for_tick(uint64_t tick) {
     if (g_last_phase_tick == 0) {
         g_last_phase_tick = tick;
         return (g_rotation_phase_q16 >> 16) & 0xffULL;
@@ -1018,7 +930,7 @@ uint64_t phase_base_for_tick(uint64_t tick) {
     return (g_rotation_phase_q16 >> 16) & 0xffULL;
 }
 
-void rotate_project_vertex(const vec3 &in,
+[[maybe_unused]] void rotate_project_vertex(const vec3 &in,
                            int32_t sin_y,
                            int32_t cos_y,
                            int32_t sin_x,
@@ -1053,160 +965,8 @@ void draw_panel(uint64_t tick) {
     if (width < 320 || height < 200) {
         return;
     }
-
-    const int32_t panel_x = width / 3;
-    const int32_t panel_y = 60;
-    const int32_t panel_w = width - panel_x - 24;
-    const int32_t panel_h = height - panel_y - 24;
-    if (panel_w < 120 || panel_h < 120) {
-        return;
-    }
-    fill_rect(0, 0, width, height, compose_rgb(8, 12, 22));
-
-    const bool easter_mode = g_cube_easter_mode;
-    const bool easter_pulse = easter_mode && (tick < g_cube_easter_pulse_until_tick);
-    const uint8_t pulse = static_cast<uint8_t>((tri_wave_q15((tick * 7) & 0xffULL) + 32768) >> 8);
-    const uint32_t bg0 = easter_mode
-                             ? (easter_pulse ? compose_rgb(20 + (pulse / 16), 6, 30 + (pulse / 8))
-                                             : compose_rgb(18, 6, 30))
-                             : compose_rgb(8, 12, 20);
-    const uint32_t bg1 = easter_mode
-                             ? (easter_pulse ? compose_rgb(44 + (pulse / 10), 14, 68 + (pulse / 6))
-                                             : compose_rgb(44, 14, 68))
-                             : compose_rgb(18, 28, 54);
-    const uint32_t fg = easter_mode ? compose_rgb(255, 230, 255) : compose_rgb(232, 242, 255);
-    const uint32_t wire = easter_mode
-                              ? (easter_pulse ? compose_rgb(255, pulse, static_cast<uint8_t>(255 - pulse))
-                                              : compose_rgb(255, 168, 255))
-                              : compose_rgb(255, 255, 255);
-
-    for (int32_t y = 0; y < panel_h; y++) {
-        const uint8_t blend = static_cast<uint8_t>((y * 255) / panel_h);
-        const uint8_t r = static_cast<uint8_t>((((bg0 >> g_fb->red_mask_shift) & ((1U << g_fb->red_mask_size) - 1U)) * (255 - blend) +
-                                                 ((bg1 >> g_fb->red_mask_shift) & ((1U << g_fb->red_mask_size) - 1U)) * blend) /
-                                                255);
-        const uint8_t g = static_cast<uint8_t>((((bg0 >> g_fb->green_mask_shift) & ((1U << g_fb->green_mask_size) - 1U)) * (255 - blend) +
-                                                 ((bg1 >> g_fb->green_mask_shift) & ((1U << g_fb->green_mask_size) - 1U)) * blend) /
-                                                255);
-        const uint8_t b = static_cast<uint8_t>((((bg0 >> g_fb->blue_mask_shift) & ((1U << g_fb->blue_mask_size) - 1U)) * (255 - blend) +
-                                                 ((bg1 >> g_fb->blue_mask_shift) & ((1U << g_fb->blue_mask_size) - 1U)) * blend) /
-                                                255);
-        const uint32_t row_color = compose_rgb(r << (8 - g_fb->red_mask_size),
-                                               g << (8 - g_fb->green_mask_size),
-                                               b << (8 - g_fb->blue_mask_size));
-        fill_rect(panel_x, panel_y + y, panel_w, 1, row_color);
-    }
-
-    draw_line(panel_x, panel_y, panel_x + panel_w - 1, panel_y, compose_rgb(64, 110, 220));
-    draw_line(panel_x, panel_y + panel_h - 1, panel_x + panel_w - 1, panel_y + panel_h - 1, compose_rgb(64, 110, 220));
-    draw_line(panel_x, panel_y, panel_x, panel_y + panel_h - 1, compose_rgb(64, 110, 220));
-    draw_line(panel_x + panel_w - 1, panel_y, panel_x + panel_w - 1, panel_y + panel_h - 1, compose_rgb(64, 110, 220));
-
-    const uint64_t active_style = easter_mode ? kStyleBoth : g_render_style;
-    if (g_demo_enabled) {
-        const uint64_t phase_base = phase_base_for_tick(tick);
-        const int32_t sin_y = tri_wave_q15(phase_base);
-        const int32_t cos_y = tri_wave_q15(phase_base + 64);
-        const int32_t sin_x = tri_wave_q15((phase_base * 3) / 2 + 19);
-        const int32_t cos_x = tri_wave_q15((phase_base * 3) / 2 + 83);
-
-        point2 projected[8];
-        int32_t depth[8];
-        const int32_t cx = panel_x + panel_w / 2;
-        const int32_t cy = panel_y + panel_h / 2 + 10;
-        const int32_t focal = panel_h / 2;
-        for (uint64_t i = 0; i < 8; i++) {
-            rotate_project_vertex(kCubeVertices[i], sin_y, cos_y, sin_x, cos_x, focal, cx, cy, &projected[i], &depth[i]);
-        }
-
-        sort_face order[12];
-        for (uint64_t i = 0; i < 12; i++) {
-            const face &f = kCubeFaces[i];
-            order[i].face_index = static_cast<uint8_t>(i);
-            order[i].depth = (depth[f.i0] + depth[f.i1] + depth[f.i2]) / 3;
-        }
-        for (uint64_t i = 1; i < 12; i++) {
-            sort_face key = order[i];
-            int64_t j = static_cast<int64_t>(i) - 1;
-            while (j >= 0 && order[j].depth > key.depth) {
-                order[j + 1] = order[j];
-                j--;
-            }
-            order[j + 1] = key;
-        }
-
-        const bool draw_solid = (active_style == kStyleSolid || active_style == kStyleBoth);
-        const bool draw_wire = (active_style == kStyleWire || active_style == kStyleBoth);
-        for (int64_t i = 11; i >= 0; i--) {
-            const face &f = kCubeFaces[order[i].face_index];
-            const point2 &a = projected[f.i0];
-            const point2 &b = projected[f.i1];
-            const point2 &c = projected[f.i2];
-            const int64_t cross = static_cast<int64_t>(b.x - a.x) * static_cast<int64_t>(c.y - a.y) -
-                                  static_cast<int64_t>(b.y - a.y) * static_cast<int64_t>(c.x - a.x);
-            if (cross <= 0) {
-                continue;
-            }
-            if (draw_solid) {
-                fill_triangle(a, b, c, compose_rgb(f.color_r, f.color_g, f.color_b));
-            }
-            if (draw_wire) {
-                draw_line(a.x, a.y, b.x, b.y, wire);
-                draw_line(b.x, b.y, c.x, c.y, wire);
-                draw_line(c.x, c.y, a.x, a.y, wire);
-            }
-        }
-    } else {
-        draw_text(panel_x + 24, panel_y + 48, "3D DEMO PAUSED", compose_rgb(176, 206, 248), compose_rgb(8, 12, 22));
-        draw_text(panel_x + 24, panel_y + 48 + static_cast<int32_t>(kGlyphH * g_text_scale),
-                  "INPUT/COMMAND SURFACES ACTIVE", compose_rgb(136, 178, 236), compose_rgb(8, 12, 22));
-    }
-
-    const int32_t hud_x = panel_x + 12;
-    const int32_t hud_y = panel_y + 12;
-    const int32_t hud_w = panel_w / 2;
-    const int32_t line_h = static_cast<int32_t>(kGlyphH * g_text_scale);
-    const int32_t hud_h = 10 + (line_h * (easter_mode ? 5 : 4));
-    fill_rect(hud_x, hud_y, hud_w, hud_h, compose_rgb(4, 8, 18));
-    draw_text(hud_x + 6, hud_y + 4, g_demo_enabled ? "FORTIFY VIDEO 3D DEMO" : "FORTIFY VIDEO DEMO OFF", fg, compose_rgb(4, 8, 18));
-    if (active_style == kStyleSolid) {
-        draw_text(hud_x + 6, hud_y + 4 + line_h, "STYLE SOLID", fg, compose_rgb(4, 8, 18));
-    } else if (active_style == kStyleWire) {
-        draw_text(hud_x + 6, hud_y + 4 + line_h, "STYLE WIRE", fg, compose_rgb(4, 8, 18));
-    } else {
-        draw_text(hud_x + 6, hud_y + 4 + line_h, "STYLE BOTH", fg, compose_rgb(4, 8, 18));
-    }
-    if (easter_mode) {
-        draw_text(hud_x + 6, hud_y + 4 + line_h * 4, "EASTER MODE", compose_rgb(255, 190, 255), compose_rgb(4, 8, 18));
-        if (easter_pulse) {
-            draw_text(hud_x + 160, hud_y + 4 + line_h * 4, "PULSE", compose_rgb(255, 220, 160), compose_rgb(4, 8, 18));
-        }
-    }
-
-    if (g_font_style == kFontMono) {
-        draw_text(hud_x + 6, hud_y + 4 + line_h * 2, "TEXT MONO SCALE", fg, compose_rgb(4, 8, 18));
-    } else if (g_font_style == kFontBold) {
-        draw_text(hud_x + 6, hud_y + 4 + line_h * 2, "TEXT BOLD SCALE", fg, compose_rgb(4, 8, 18));
-    } else {
-        draw_text(hud_x + 6, hud_y + 4 + line_h * 2, "TEXT SHADOW SCALE", fg, compose_rgb(4, 8, 18));
-    }
-
-    char fps_value[24];
-    u64_to_decimal(g_fps_display, fps_value, sizeof(fps_value));
-    draw_text(hud_x + 6, hud_y + 4 + line_h * 3, "FPS", fg, compose_rgb(4, 8, 18));
-    const int32_t fps_x = hud_x + 6 + static_cast<int32_t>(kGlyphW * g_text_scale * 4);
-    draw_text(fps_x, hud_y + 4 + line_h * 3, fps_value, fg, compose_rgb(4, 8, 18));
-
-    const int32_t scale_x = hud_x + 6 + static_cast<int32_t>(kGlyphW * g_text_scale * 16);
-    if (g_text_scale == 1) {
-        draw_text(scale_x, hud_y + 4 + line_h * 2, "1", fg, compose_rgb(4, 8, 18));
-    } else if (g_text_scale == 2) {
-        draw_text(scale_x, hud_y + 4 + line_h * 2, "2", fg, compose_rgb(4, 8, 18));
-    } else if (g_text_scale == 3) {
-        draw_text(scale_x, hud_y + 4 + line_h * 2, "3", fg, compose_rgb(4, 8, 18));
-    } else {
-        draw_text(scale_x, hud_y + 4 + line_h * 2, "4", fg, compose_rgb(4, 8, 18));
-    }
+    (void)tick;
+    fill_rect(0, 0, width, height, compose_rgb(8, 14, 24));
     draw_compositor_surface_cards();
     blit_backbuffer_to_frontbuffer();
 }
@@ -1257,7 +1017,7 @@ bool video_init(void) {
 }
 
 bool renderer_init(void) {
-    log_info("renderer: software 3D renderer ready.");
+    log_info("renderer: static desktop shell renderer ready.");
     return true;
 }
 
