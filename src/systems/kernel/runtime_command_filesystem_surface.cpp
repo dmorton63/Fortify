@@ -158,6 +158,72 @@ void append_shell_flags(char *out_text, uint64_t out_size, uint64_t shell_flags)
     }
 }
 
+bool parse_hex_u64_token(const char *token, uint64_t *out_value) {
+    if (token == 0 || out_value == 0) {
+        return false;
+    }
+    if (!(token[0] == '0' && (token[1] == 'x' || token[1] == 'X'))) {
+        return false;
+    }
+    uint64_t value = 0;
+    uint64_t index = 2;
+    if (token[index] == '\0') {
+        return false;
+    }
+    while (token[index] != '\0') {
+        const char ch = token[index];
+        uint8_t digit = 0xff;
+        if (ch >= '0' && ch <= '9') {
+            digit = static_cast<uint8_t>(ch - '0');
+        } else if (ch >= 'a' && ch <= 'f') {
+            digit = static_cast<uint8_t>(10 + (ch - 'a'));
+        } else if (ch >= 'A' && ch <= 'F') {
+            digit = static_cast<uint8_t>(10 + (ch - 'A'));
+        } else {
+            return false;
+        }
+        value = (value << 4) | static_cast<uint64_t>(digit);
+        index++;
+    }
+    *out_value = value;
+    return true;
+}
+
+bool parse_surface_id_token(const char *token, uint64_t *out_surface_id) {
+    if (token == 0 || out_surface_id == 0) {
+        return false;
+    }
+    if (kernel_parse_u64_decimal(token, out_surface_id)) {
+        return true;
+    }
+    return parse_hex_u64_token(token, out_surface_id);
+}
+
+bool normalize_surface_title_token(const char *token, char *out_title, uint64_t out_size) {
+    if (token == 0 || out_title == 0 || out_size < 2) {
+        return false;
+    }
+    uint64_t write_index = 0;
+    for (uint64_t i = 0; token[i] != '\0'; i++) {
+        if (write_index + 1 >= out_size) {
+            return false;
+        }
+        char ch = token[i];
+        if (ch == '_') {
+            ch = ' ';
+        }
+        if (ch < 0x20 || ch > 0x7e) {
+            return false;
+        }
+        out_title[write_index++] = ch;
+    }
+    if (write_index == 0) {
+        return false;
+    }
+    out_title[write_index] = '\0';
+    return true;
+}
+
 bool parse_surface_type_token(const char *token, surface_type *out_type) {
     if (token == 0 || out_type == 0) {
         return false;
@@ -838,6 +904,63 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
         console_write(surface_type_name(type));
         console_write(" title=");
         console_write(title_token);
+        console_write("\n");
+        return true;
+    }
+    if (kernel_string_starts_with(command, "surface-focus ")) {
+        char target_token[40];
+        uint64_t cursor = 14;
+        if (!kernel_parse_token(command, cursor, target_token, sizeof(target_token), &cursor)) {
+            serial_write("[WARN] compositor: serial cmd surface-focus expects <id|title> (use '_' for spaces)\n");
+            console_write("[WARN] compositor: serial cmd surface-focus expects <id|title> (use '_' for spaces)\n");
+            return true;
+        }
+        char extra_token[4];
+        if (kernel_parse_token(command, cursor, extra_token, sizeof(extra_token), 0)) {
+            serial_write("[WARN] compositor: serial cmd surface-focus accepts only <id|title>\n");
+            console_write("[WARN] compositor: serial cmd surface-focus accepts only <id|title>\n");
+            return true;
+        }
+
+        uint64_t focused_id = 0;
+        bool focused = false;
+        if (parse_surface_id_token(target_token, &focused_id)) {
+            focused = compositor_focus_surface_id(focused_id);
+        } else {
+            char normalized_title[32];
+            if (!normalize_surface_title_token(target_token, normalized_title, sizeof(normalized_title))) {
+                serial_write("[WARN] compositor: serial cmd surface-focus invalid title token\n");
+                console_write("[WARN] compositor: serial cmd surface-focus invalid title token\n");
+                return true;
+            }
+            const uint64_t count = compositor_surface_count();
+            for (uint64_t i = 0; i < count; i++) {
+                surface_info info = {};
+                if (!compositor_surface_get(i, &info)) {
+                    continue;
+                }
+                if (!kernel_string_equals(info.title, normalized_title)) {
+                    continue;
+                }
+                focused = compositor_focus_surface_id(info.id);
+                focused_id = info.id;
+                break;
+            }
+        }
+
+        if (!focused) {
+            serial_write("[WARN] compositor: serial cmd surface-focus failed (surface not found)\n");
+            console_write("[WARN] compositor: serial cmd surface-focus failed (surface not found)\n");
+            return true;
+        }
+
+        char id_hex[19];
+        kernel_format_hex64(id_hex, focused_id);
+        serial_write("[INFO] compositor: serial cmd surface-focus id=");
+        serial_write(id_hex);
+        serial_write("\n");
+        console_write("[INFO] compositor: serial cmd surface-focus id=");
+        console_write(id_hex);
         console_write("\n");
         return true;
     }

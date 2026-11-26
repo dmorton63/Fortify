@@ -1380,6 +1380,18 @@ bool compositor_surface_get(uint64_t index, surface_info *out_info) {
     return false;
 }
 
+bool compositor_focus_surface_id(uint64_t surface_id) {
+    if (!g_compositor_ready || surface_id == 0) {
+        return false;
+    }
+    compositor_surface_entry *entry = find_surface_by_id(surface_id);
+    if (entry == 0) {
+        return false;
+    }
+    g_focused_surface_id = entry->info.id;
+    return true;
+}
+
 bool compositor_focus_shell_region(surface_shell_region region) {
     if (!g_compositor_ready || region == surface_shell_region::none) {
         return false;
