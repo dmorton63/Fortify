@@ -51,6 +51,14 @@ uint64_t g_cube_easter_pulse_until_tick = 0;
 char g_input_surface_draft[64] = "ready";
 char g_command_center_last_command[64] = "boot";
 char g_command_center_status[64] = "idle";
+constexpr uint64_t kCommandCenterHistoryMaxLines = 192;
+constexpr uint64_t kCommandCenterHistoryLineChars = 96;
+char g_command_center_history[kCommandCenterHistoryMaxLines][kCommandCenterHistoryLineChars] = {};
+char g_command_center_line_accum[kCommandCenterHistoryLineChars] = {};
+uint64_t g_command_center_history_head = 0;
+uint64_t g_command_center_history_count = 0;
+uint64_t g_command_center_line_accum_len = 0;
+uint64_t g_command_center_scroll_lines = 0;
 char g_submitted_command[64] = {};
 bool g_submitted_command_ready = false;
 uint64_t g_input_surface_id = 0;
@@ -226,6 +234,85 @@ compositor_surface_entry *find_surface_by_id(uint64_t surface_id) {
 
 void input_surface_set_ready(void) {
     copy_ascii_text("ready", g_input_surface_draft, sizeof(g_input_surface_draft), "ready");
+}
+
+void command_center_follow_tail(void) {
+    g_command_center_scroll_lines = 0;
+}
+
+void command_center_push_line(const char *line) {
+    if (line == 0) {
+        return;
+    }
+    if (!copy_ascii_text(line,
+                         g_command_center_history[g_command_center_history_head],
+                         sizeof(g_command_center_history[g_command_center_history_head]),
+                         "")) {
+        return;
+    }
+    g_command_center_history_head = (g_command_center_history_head + 1) % kCommandCenterHistoryMaxLines;
+    if (g_command_center_history_count < kCommandCenterHistoryMaxLines) {
+        g_command_center_history_count++;
+    }
+}
+
+void command_center_append_output_chunk(const char *text) {
+    if (text == 0) {
+        return;
+    }
+    uint64_t added_lines = 0;
+    for (uint64_t i = 0; text[i] != '\0'; i++) {
+        const char ch = text[i];
+        if (ch == '\r') {
+            continue;
+        }
+        if (ch == '\n') {
+            g_command_center_line_accum[g_command_center_line_accum_len] = '\0';
+            command_center_push_line(g_command_center_line_accum_len == 0 ? "" : g_command_center_line_accum);
+            g_command_center_line_accum_len = 0;
+            g_command_center_line_accum[0] = '\0';
+            added_lines++;
+            continue;
+        }
+        if (ch < 0x20 || ch > 0x7e) {
+            continue;
+        }
+        if (g_command_center_line_accum_len + 1 < sizeof(g_command_center_line_accum)) {
+            g_command_center_line_accum[g_command_center_line_accum_len++] = ch;
+            g_command_center_line_accum[g_command_center_line_accum_len] = '\0';
+        }
+    }
+    if (g_command_center_scroll_lines == 0 || added_lines == 0) {
+        return;
+    }
+    g_command_center_scroll_lines += added_lines;
+    const uint64_t max_scroll = g_command_center_history_count > 0 ? (g_command_center_history_count - 1) : 0;
+    if (g_command_center_scroll_lines > max_scroll) {
+        g_command_center_scroll_lines = max_scroll;
+    }
+}
+
+bool command_center_scroll_lines_by(int64_t delta_lines) {
+    if (delta_lines == 0) {
+        return true;
+    }
+    if (delta_lines > 0) {
+        const uint64_t delta = static_cast<uint64_t>(delta_lines);
+        const uint64_t max_scroll = g_command_center_history_count > 0 ? (g_command_center_history_count - 1) : 0;
+        uint64_t next = g_command_center_scroll_lines + delta;
+        if (next > max_scroll || next < g_command_center_scroll_lines) {
+            next = max_scroll;
+        }
+        g_command_center_scroll_lines = next;
+        return true;
+    }
+    const uint64_t delta = static_cast<uint64_t>(-delta_lines);
+    if (delta >= g_command_center_scroll_lines) {
+        g_command_center_scroll_lines = 0;
+        return true;
+    }
+    g_command_center_scroll_lines -= delta;
+    return true;
 }
 
 void input_surface_append_char(char value) {
@@ -479,6 +566,76 @@ void draw_compositor_surface_cards(void) {
         draw_text(center_x + 56, center_y + 30, g_command_center_last_command, compose_rgb(226, 236, 255), center_bg);
         draw_text(center_x + 12, center_y + 48, "STATUS", compose_rgb(192, 206, 255), center_bg);
         draw_text(center_x + 76, center_y + 48, g_command_center_status, compose_rgb(206, 220, 255), center_bg);
+        const int32_t history_x = center_x + 10;
+        const int32_t history_y = center_y + 68;
+        const int32_t history_w = center_w - 20;
+        const int32_t history_h = center_h - 78;
+        fill_rect(history_x, history_y, history_w, history_h, compose_rgb(8, 16, 32));
+        draw_line(history_x, history_y, history_x + history_w - 1, history_y, compose_rgb(72, 96, 156));
+        draw_line(history_x,
+                  history_y + history_h - 1,
+                  history_x + history_w - 1,
+                  history_y + history_h - 1,
+                  compose_rgb(72, 96, 156));
+        draw_line(history_x, history_y, history_x, history_y + history_h - 1, compose_rgb(72, 96, 156));
+        draw_line(history_x + history_w - 1,
+                  history_y,
+                  history_x + history_w - 1,
+                  history_y + history_h - 1,
+                  compose_rgb(72, 96, 156));
+        const int32_t line_step = static_cast<int32_t>(kGlyphH * g_text_scale + 2);
+        const int32_t visible_rows = line_step > 0 ? ((history_h - 8) / line_step) : 0;
+        if (visible_rows > 0) {
+            const uint64_t visible = static_cast<uint64_t>(visible_rows);
+            uint64_t first_abs = 0;
+            if (g_command_center_history_count > visible + g_command_center_scroll_lines) {
+                first_abs = g_command_center_history_count - visible - g_command_center_scroll_lines;
+            }
+            const uint64_t oldest =
+                (g_command_center_history_head + kCommandCenterHistoryMaxLines - g_command_center_history_count) %
+                kCommandCenterHistoryMaxLines;
+            for (uint64_t row = 0; row < visible; row++) {
+                const uint64_t abs_index = first_abs + row;
+                if (abs_index >= g_command_center_history_count) {
+                    break;
+                }
+                const uint64_t slot = (oldest + abs_index) % kCommandCenterHistoryMaxLines;
+                draw_text(history_x + 6,
+                          history_y + 4 + static_cast<int32_t>(row) * line_step,
+                          g_command_center_history[slot],
+                          compose_rgb(188, 208, 244),
+                          compose_rgb(8, 16, 32));
+            }
+        }
+        if (g_command_center_history_count > 1) {
+            const int32_t bar_x = history_x + history_w - 8;
+            const int32_t bar_y = history_y + 2;
+            const int32_t bar_h = history_h - 4;
+            fill_rect(bar_x, bar_y, 4, bar_h, compose_rgb(24, 34, 52));
+            const uint64_t page = visible_rows > 0 ? static_cast<uint64_t>(visible_rows) : 1;
+            const uint64_t total = g_command_center_history_count;
+            uint64_t thumb_h = (page * static_cast<uint64_t>(bar_h)) / total;
+            if (thumb_h < 10) {
+                thumb_h = 10;
+            }
+            if (thumb_h > static_cast<uint64_t>(bar_h)) {
+                thumb_h = static_cast<uint64_t>(bar_h);
+            }
+            const uint64_t max_scroll = total > page ? (total - page) : 0;
+            uint64_t scroll = g_command_center_scroll_lines;
+            if (scroll > max_scroll) {
+                scroll = max_scroll;
+            }
+            uint64_t thumb_offset = 0;
+            if (max_scroll != 0 && static_cast<uint64_t>(bar_h) > thumb_h) {
+                thumb_offset = (scroll * (static_cast<uint64_t>(bar_h) - thumb_h)) / max_scroll;
+            }
+            fill_rect(bar_x,
+                      bar_y + static_cast<int32_t>(thumb_offset),
+                      4,
+                      static_cast<int32_t>(thumb_h),
+                      compose_rgb(116, 164, 248));
+        }
         break;
     }
 }
@@ -994,9 +1151,16 @@ bool compositor_init(void) {
     g_cube_easter_pulse_until_tick = 0;
     g_submitted_command_ready = false;
     g_submitted_command[0] = '\0';
+    g_command_center_history_head = 0;
+    g_command_center_history_count = 0;
+    g_command_center_line_accum_len = 0;
+    g_command_center_scroll_lines = 0;
+    g_command_center_line_accum[0] = '\0';
     input_surface_set_ready();
     copy_ascii_text("boot", g_command_center_last_command, sizeof(g_command_center_last_command), "boot");
     copy_ascii_text("idle", g_command_center_status, sizeof(g_command_center_status), "idle");
+    command_center_push_line("Fortify terminal ready.");
+    command_center_push_line("Use term-scroll-up/down to review output.");
     for (uint64_t i = 0; i < kMaxSurfaces; i++) {
         clear_surface_entry(&g_surfaces[i]);
     }
@@ -1147,6 +1311,22 @@ bool video_set_command_center_last_command(const char *command_text) {
 
 bool video_set_command_center_status(const char *status_text) {
     return copy_ascii_text(status_text, g_command_center_status, sizeof(g_command_center_status), "idle");
+}
+
+bool video_append_command_center_output(const char *text) {
+    if (text == 0) {
+        return false;
+    }
+    command_center_append_output_chunk(text);
+    return true;
+}
+
+bool video_scroll_command_center_output(int64_t delta_lines) {
+    return command_center_scroll_lines_by(delta_lines);
+}
+
+void video_follow_command_center_output(void) {
+    command_center_follow_tail();
 }
 
 bool compositor_route_event(surface_event_type type, char value) {

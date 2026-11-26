@@ -1,5 +1,6 @@
 #include "fortify/systems/boot/boot.h"
 #include "fortify/systems/console/console.h"
+#include "fortify/systems/subsystems/subsystems.h"
 
 #include <stdint.h>
 
@@ -244,6 +245,9 @@ bool console_init(void) {
 }
 
 void console_write(const char *text) {
+    if (text != 0) {
+        video_append_command_center_output(text);
+    }
 #if !FORTIFY_DISPLAY_LOGS
     (void)text;
     return;

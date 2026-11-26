@@ -251,6 +251,9 @@ bool video_trigger_cube_easter_pulse(uint64_t duration_ticks);
 bool video_set_input_surface_draft(const char *draft_text);
 bool video_set_command_center_last_command(const char *command_text);
 bool video_set_command_center_status(const char *status_text);
+bool video_append_command_center_output(const char *text);
+bool video_scroll_command_center_output(int64_t delta_lines);
+void video_follow_command_center_output(void);
 bool compositor_route_event(surface_event_type type, char value);
 bool compositor_take_submitted_command(char *out_command, uint64_t out_size);
 bool compositor_surface_create(surface_type type,

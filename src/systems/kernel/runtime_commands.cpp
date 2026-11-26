@@ -152,7 +152,7 @@ static bool execute_runtime_command_file(const char *name_8dot3,
 }
 
 static void log_ap_trigger_command_help(void) {
-    log_info("smp: serial cmd: shutdown|poweroff, halt, run-cmd-file <name.EXT> [source], ap-trigger [0|1|2], ap-trigger, ap-stats, ap-task-start, ap-task-stop, ap-task-migrate [0|1], ap-migration-smoke [timeout-ticks], smp-log [default|quiet], smp-log-health [ticks], video-demo [0|1], video-style [0|1|2], video-speed <1..32>, video-font [0|1|2], video-text-scale <1..4>, input-kbd [0|1], net-rx-inject <count>, net-rx-stats, net-rx-smoke [count], net-rx-smoke-wait [count] [timeout-ticks], web-head <target> [max-bytes], web-head-status <request-id>, web-head-stats, web-head-smoke-wait <target> [max-bytes] [timeout-ticks], usb-inject <count>, usb-stats, usb-smoke [count], usb-smoke-wait [count] [timeout-ticks], storage-inject <count>, storage-stats, storage-smoke [count], storage-smoke-wait [count] [timeout-ticks], audio-inject <count>, audio-stats, audio-smoke [count], audio-smoke-wait [count] [timeout-ticks], webcam-inject <count>, webcam-stats, webcam-smoke [count], webcam-smoke-wait [count] [timeout-ticks], inject-all <count>, fs-root-ls [source], fs-root-head <name.EXT> [source], fs-9p-probe, fs-9p-mode [safe|experimental], fs-9p-head <path> [max-bytes], fs-9p-head-status <request-id>, fs-9p-stats, fs-9p-reset-stats, fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks], surface-create <type> <title>, surface-ls, rmsg-profile [balanced|stress|quiet], rmsg-stats, rmsg-verify, rmsg-drop-test <src|kbd|unroute>, rmsg-selftest, rmsg-reset-stats, rmsg-smoke, rmsg-smoke-extended, rmsg-backlog-test <count> [input|cmd|both], help");
+    log_info("smp: serial cmd: shutdown|poweroff, halt, run-cmd-file <name.EXT> [source], term-scroll-up [lines], term-scroll-down [lines], term-follow, ap-trigger [0|1|2], ap-trigger, ap-stats, ap-task-start, ap-task-stop, ap-task-migrate [0|1], ap-migration-smoke [timeout-ticks], smp-log [default|quiet], smp-log-health [ticks], video-demo [0|1], video-style [0|1|2], video-speed <1..32>, video-font [0|1|2], video-text-scale <1..4>, input-kbd [0|1], net-rx-inject <count>, net-rx-stats, net-rx-smoke [count], net-rx-smoke-wait [count] [timeout-ticks], web-head <target> [max-bytes], web-head-status <request-id>, web-head-stats, web-head-smoke-wait <target> [max-bytes] [timeout-ticks], usb-inject <count>, usb-stats, usb-smoke [count], usb-smoke-wait [count] [timeout-ticks], storage-inject <count>, storage-stats, storage-smoke [count], storage-smoke-wait [count] [timeout-ticks], audio-inject <count>, audio-stats, audio-smoke [count], audio-smoke-wait [count] [timeout-ticks], webcam-inject <count>, webcam-stats, webcam-smoke [count], webcam-smoke-wait [count] [timeout-ticks], inject-all <count>, fs-root-ls [source], fs-root-head <name.EXT> [source], fs-9p-probe, fs-9p-mode [safe|experimental], fs-9p-head <path> [max-bytes], fs-9p-head-status <request-id>, fs-9p-stats, fs-9p-reset-stats, fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks], surface-create <type> <title>, surface-ls, rmsg-profile [balanced|stress|quiet], rmsg-stats, rmsg-verify, rmsg-drop-test <src|kbd|unroute>, rmsg-selftest, rmsg-reset-stats, rmsg-smoke, rmsg-smoke-extended, rmsg-backlog-test <count> [input|cmd|both], help");
 }
 
 static void log_ap_stats_snapshot(void) {
@@ -534,6 +534,42 @@ static void handle_serial_runtime_command(const char *command) {
         console_write(" checksum=");
         console_write(checksum_hex);
         console_write("\n");
+        return;
+    }
+    if (kernel_string_equals(command, "term-follow")) {
+        video_follow_command_center_output();
+        serial_write("[INFO] smp: serial cmd term-follow enabled (tail view)\n");
+        console_write("[INFO] smp: serial cmd term-follow enabled (tail view)\n");
+        return;
+    }
+    if (kernel_string_equals(command, "term-scroll-up") ||
+        kernel_string_starts_with(command, "term-scroll-up ")) {
+        uint64_t lines = 8;
+        if (kernel_string_starts_with(command, "term-scroll-up ")) {
+            if (!kernel_parse_u64_decimal(command + 15, &lines) || lines == 0 || lines > 1024) {
+                serial_write("[WARN] smp: serial cmd term-scroll-up lines expects 1..1024\n");
+                console_write("[WARN] smp: serial cmd term-scroll-up lines expects 1..1024\n");
+                return;
+            }
+        }
+        video_scroll_command_center_output(static_cast<int64_t>(lines));
+        serial_write("[INFO] smp: serial cmd term-scroll-up ok\n");
+        console_write("[INFO] smp: serial cmd term-scroll-up ok\n");
+        return;
+    }
+    if (kernel_string_equals(command, "term-scroll-down") ||
+        kernel_string_starts_with(command, "term-scroll-down ")) {
+        uint64_t lines = 8;
+        if (kernel_string_starts_with(command, "term-scroll-down ")) {
+            if (!kernel_parse_u64_decimal(command + 17, &lines) || lines == 0 || lines > 1024) {
+                serial_write("[WARN] smp: serial cmd term-scroll-down lines expects 1..1024\n");
+                console_write("[WARN] smp: serial cmd term-scroll-down lines expects 1..1024\n");
+                return;
+            }
+        }
+        video_scroll_command_center_output(-static_cast<int64_t>(lines));
+        serial_write("[INFO] smp: serial cmd term-scroll-down ok\n");
+        console_write("[INFO] smp: serial cmd term-scroll-down ok\n");
         return;
     }
     if (kernel_string_equals(command, "ap-trigger")) {
