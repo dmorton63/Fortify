@@ -322,6 +322,29 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
   - `make run` now switches interactive terminals to character-at-a-time mode for live serial typing (and restores terminal settings on exit).
 - `help` (show command help)
 
+Desktop shell implementation checklist (Citadel layout)
+
+- [ ] Taskbar regions (bottom bar frame + slot mapping)
+  - [ ] Reserve fixed regions for `Terminal | Explorer | Tasks | Clock | System`.
+  - [ ] Define canonical slot geometry in compositor layout code (single source of truth).
+  - [ ] Keep desktop area static (no icon grid / no user drag layout).
+- [ ] Launcher actions (taskbar command wiring)
+  - [ ] Add runtime actions for each taskbar item (`terminal-launch`, `explorer-open`, `tasks-open`, `system-menu-open`).
+  - [ ] Route launcher actions through runtime-message router command target to keep serial/keyboard behavior consistent.
+  - [ ] Add a `surface-focus <id|title>` command for deterministic focus switching in scripted tests.
+- [ ] Window chrome flags (borderless policy)
+  - [ ] Add per-surface chrome flags (`borderless`, `minimize`, `maximize`, `close`) to compositor metadata.
+  - [ ] Default application/document/workspace surfaces to borderless chrome with the three controls only.
+  - [ ] Keep dashboard/tool surfaces (for `Command Center` / `Input Surface`) non-resizable by policy.
+- [ ] Security-status widget wiring (taskbar right side)
+  - [ ] Add a compact widget model (`tpm`, `secure_boot`, `network`, overall health color).
+  - [ ] Populate initial values from existing runtime health paths and surface them in one compositor status line.
+  - [ ] Add a serial command `security-status` for text-mode verification of widget state.
+- [ ] Validation commands (smoke loop)
+  - [ ] `surface-ls` shows fixed shell surfaces and chrome/state flags.
+  - [ ] `rmsg-smoke` passes after launcher actions and focus transitions.
+  - [ ] `smp-log quiet` + `smp-log-health 0` keeps command-driven shell validation readable.
+
 Runtime-message router validation quick checks:
 
 - `rmsg-profile [balanced|stress|quiet]`
