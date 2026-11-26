@@ -84,6 +84,18 @@ constexpr uint8_t kLayerDesktop = 0;
 constexpr uint8_t kLayerWorkspace = 1;
 constexpr uint8_t kLayerApplications = 2;
 constexpr uint8_t kLayerPanels = 3;
+constexpr uint32_t kShellTaskbarHeight = 72;
+constexpr uint32_t kShellTaskbarPadding = 24;
+constexpr uint32_t kShellTaskbarGap = 8;
+constexpr uint32_t kShellTaskbarSlotCount = 5;
+
+enum class shell_taskbar_slot : uint8_t {
+    terminal = 0,
+    explorer = 1,
+    tasks = 2,
+    clock = 3,
+    system = 4,
+};
 
 struct compositor_surface_entry {
     bool used;
@@ -150,6 +162,8 @@ void clear_surface_entry(compositor_surface_entry *entry) {
     entry->info.width = 0;
     entry->info.height = 0;
     entry->info.capabilities = 0;
+    entry->info.shell_region = surface_shell_region::none;
+    entry->info.shell_flags = 0;
     for (uint64_t i = 0; i < sizeof(entry->info.title); i++) {
         entry->info.title[i] = '\0';
     }
@@ -193,6 +207,110 @@ bool surface_title_equals(const char *title, const char *expected) {
         i++;
     }
     return title[i] == '\0' && expected[i] == '\0';
+}
+
+bool shell_taskbar_slot_region(shell_taskbar_slot slot, surface_shell_region *out_region) {
+    if (out_region == 0) {
+        return false;
+    }
+    if (slot == shell_taskbar_slot::terminal) {
+        *out_region = surface_shell_region::taskbar_terminal;
+        return true;
+    }
+    if (slot == shell_taskbar_slot::explorer) {
+        *out_region = surface_shell_region::taskbar_explorer;
+        return true;
+    }
+    if (slot == shell_taskbar_slot::tasks) {
+        *out_region = surface_shell_region::taskbar_tasks;
+        return true;
+    }
+    if (slot == shell_taskbar_slot::clock) {
+        *out_region = surface_shell_region::taskbar_clock;
+        return true;
+    }
+    if (slot == shell_taskbar_slot::system) {
+        *out_region = surface_shell_region::taskbar_system;
+        return true;
+    }
+    return false;
+}
+
+bool shell_taskbar_slot_from_title(const char *title, shell_taskbar_slot *out_slot) {
+    if (title == 0 || out_slot == 0) {
+        return false;
+    }
+    if (surface_title_equals(title, "Input Surface")) {
+        *out_slot = shell_taskbar_slot::terminal;
+        return true;
+    }
+    if (surface_title_equals(title, "Explorer Launcher")) {
+        *out_slot = shell_taskbar_slot::explorer;
+        return true;
+    }
+    if (surface_title_equals(title, "Tasks Launcher")) {
+        *out_slot = shell_taskbar_slot::tasks;
+        return true;
+    }
+    if (surface_title_equals(title, "Clock Widget")) {
+        *out_slot = shell_taskbar_slot::clock;
+        return true;
+    }
+    if (surface_title_equals(title, "System Menu")) {
+        *out_slot = shell_taskbar_slot::system;
+        return true;
+    }
+    return false;
+}
+
+void assign_taskbar_slot_geometry(shell_taskbar_slot slot, surface_info *info) {
+    if (info == 0) {
+        return;
+    }
+    const uint32_t width = g_fb != 0 ? static_cast<uint32_t>(g_fb->width) : 1280U;
+    const uint32_t height = g_fb != 0 ? static_cast<uint32_t>(g_fb->height) : 720U;
+    const uint32_t bar_width = width > (kShellTaskbarPadding * 2) ? (width - (kShellTaskbarPadding * 2)) : width;
+    const uint32_t total_gap = kShellTaskbarGap * (kShellTaskbarSlotCount - 1);
+    const uint32_t content_width = bar_width > total_gap ? (bar_width - total_gap) : bar_width;
+    const uint32_t slot_width = kShellTaskbarSlotCount > 0 ? (content_width / kShellTaskbarSlotCount) : content_width;
+    const uint32_t slot_index = static_cast<uint32_t>(slot);
+    const uint32_t x = kShellTaskbarPadding + slot_index * (slot_width + kShellTaskbarGap);
+    const uint32_t y = height > (kShellTaskbarHeight + 16) ? (height - kShellTaskbarHeight - 16) : 0U;
+    info->x = static_cast<int32_t>(x);
+    info->y = static_cast<int32_t>(y);
+    info->width = slot_width;
+    info->height = kShellTaskbarHeight;
+    info->layer = kLayerPanels;
+    info->state = surface_state::docked;
+}
+
+void assign_shell_surface_metadata(surface_info *info) {
+    if (info == 0) {
+        return;
+    }
+    info->shell_region = surface_shell_region::none;
+    info->shell_flags = 0;
+    if (info->type == surface_type::desktop || info->type == surface_type::workspace) {
+        info->shell_region = surface_shell_region::desktop_area;
+        info->shell_flags = surface_shell_flag_fixed_layout;
+        return;
+    }
+
+    shell_taskbar_slot slot = shell_taskbar_slot::terminal;
+    if (!shell_taskbar_slot_from_title(info->title, &slot)) {
+        return;
+    }
+
+    surface_shell_region region = surface_shell_region::none;
+    if (!shell_taskbar_slot_region(slot, &region)) {
+        return;
+    }
+    assign_taskbar_slot_geometry(slot, info);
+    info->shell_region = region;
+    info->shell_flags = surface_shell_flag_fixed_layout | surface_shell_flag_launcher;
+    if (slot == shell_taskbar_slot::clock) {
+        info->shell_flags |= surface_shell_flag_widget;
+    }
 }
 
 bool copy_ascii_text(const char *text, char *out, uint64_t out_size, const char *fallback) {
@@ -421,6 +539,8 @@ void assign_surface_defaults(surface_type type, surface_info *info, uint64_t ord
         info->layer = kLayerApplications;
         info->state = surface_state::floating;
     }
+    info->shell_region = surface_shell_region::none;
+    info->shell_flags = 0;
 }
 
 const char *surface_type_label(surface_type type) {
@@ -1180,6 +1300,22 @@ bool compositor_init(void) {
         g_input_surface_id = input_surface_id;
         g_focused_surface_id = input_surface_id;
     }
+    uint64_t explorer_launcher_surface_id = 0;
+    if (!compositor_surface_create(surface_type::tool, "Explorer Launcher", 0, &explorer_launcher_surface_id)) {
+        log_warn("compositor: failed to create explorer launcher surface.");
+    }
+    uint64_t tasks_launcher_surface_id = 0;
+    if (!compositor_surface_create(surface_type::tool, "Tasks Launcher", 0, &tasks_launcher_surface_id)) {
+        log_warn("compositor: failed to create tasks launcher surface.");
+    }
+    uint64_t clock_widget_surface_id = 0;
+    if (!compositor_surface_create(surface_type::tool, "Clock Widget", 0, &clock_widget_surface_id)) {
+        log_warn("compositor: failed to create clock widget surface.");
+    }
+    uint64_t system_menu_surface_id = 0;
+    if (!compositor_surface_create(surface_type::tool, "System Menu", 0, &system_menu_surface_id)) {
+        log_warn("compositor: failed to create system menu surface.");
+    }
     uint64_t command_center_surface_id = 0;
     if (!compositor_surface_create(surface_type::dashboard, "Command Center", 0, &command_center_surface_id)) {
         log_warn("compositor: failed to create default command center surface.");
@@ -1412,6 +1548,7 @@ bool compositor_surface_create(surface_type type,
     if (!copy_surface_title(title, info.title, sizeof(info.title))) {
         return false;
     }
+    assign_shell_surface_metadata(&info);
     info.capabilities = capabilities;
     info.id = __atomic_add_fetch(&g_next_surface_id, 1, __ATOMIC_RELAXED);
     g_surfaces[free_index].used = true;

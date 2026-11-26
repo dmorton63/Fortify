@@ -32,6 +32,22 @@ enum class surface_state : uint8_t {
     panel = 7,
 };
 
+enum class surface_shell_region : uint8_t {
+    none = 0,
+    desktop_area = 1,
+    taskbar_terminal = 2,
+    taskbar_explorer = 3,
+    taskbar_tasks = 4,
+    taskbar_clock = 5,
+    taskbar_system = 6,
+};
+
+enum surface_shell_flags : uint64_t {
+    surface_shell_flag_fixed_layout = 1ULL << 0,
+    surface_shell_flag_launcher = 1ULL << 1,
+    surface_shell_flag_widget = 1ULL << 2,
+};
+
 enum class surface_event_type : uint8_t {
     key_char = 0,
     key_backspace = 1,
@@ -69,6 +85,8 @@ struct surface_info {
     uint32_t width;
     uint32_t height;
     uint64_t capabilities;
+    surface_shell_region shell_region;
+    uint64_t shell_flags;
     char title[32];
 };
 

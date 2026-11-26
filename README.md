@@ -304,7 +304,7 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `fs-9p-reset-stats` (reset fs-9p head-request telemetry and request queue ids; blocked while active requests are pending/running/claimed)
 - `fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks]` (queue one virtio-9p head request and return immediately; completion logs asynchronously as done-ok/done-err/timeout; defaults: max `256`, timeout `600` ticks; with `QEMU_SHARE_ENABLE=1`, requests are safety-gated to avoid AP-worker lockups; when `SHARE_README_BRIDGE=1`, requests use a safe bridge-blob fallback and can report `done-ok`)
 - `surface-create <type> <title>` (create a compositor-owned surface; type: `desktop|application|document|workspace|dashboard|tool`; title is a single token, use `_` for spaces)
-- `surface-ls` (list compositor surfaces with id/type/state/layer/position/size/title)
+- `surface-ls` (list compositor surfaces with id/type/state/layer/position/size/title plus shell-region and shell-flag metadata)
 - `rmsg-profile [balanced|stress|quiet]` (show/set runtime-message router test profile: backlog warning depth/debounce, backlog-test pause ticks, and smoke-extended backlog count)
 - `rmsg-stats` (print a compact runtime-message router snapshot: queue depth/high-water/drop, aggregate flow, drop reasons, and per-target queue/flow)
 - `rmsg-verify` (run router counter consistency checks and report `pass|fail` with a failure-bitmask)
@@ -324,10 +324,10 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 
 Desktop shell implementation checklist (Citadel layout)
 
-- [ ] Taskbar regions (bottom bar frame + slot mapping)
-  - [ ] Reserve fixed regions for `Terminal | Explorer | Tasks | Clock | System`.
-  - [ ] Define canonical slot geometry in compositor layout code (single source of truth).
-  - [ ] Keep desktop area static (no icon grid / no user drag layout).
+- [x] Taskbar regions (bottom bar frame + slot mapping)
+  - [x] Reserve fixed regions for `Terminal | Explorer | Tasks | Clock | System`.
+  - [x] Define canonical slot geometry in compositor layout code (single source of truth).
+  - [x] Keep desktop area static (no icon grid / no user drag layout).
 - [ ] Launcher actions (taskbar command wiring)
   - [ ] Add runtime actions for each taskbar item (`terminal-launch`, `explorer-open`, `tasks-open`, `system-menu-open`).
   - [ ] Route launcher actions through runtime-message router command target to keep serial/keyboard behavior consistent.
@@ -341,7 +341,7 @@ Desktop shell implementation checklist (Citadel layout)
   - [ ] Populate initial values from existing runtime health paths and surface them in one compositor status line.
   - [ ] Add a serial command `security-status` for text-mode verification of widget state.
 - [ ] Validation commands (smoke loop)
-  - [ ] `surface-ls` shows fixed shell surfaces and chrome/state flags.
+  - [x] `surface-ls` shows fixed shell surfaces with region/flag metadata.
   - [ ] `rmsg-smoke` passes after launcher actions and focus transitions.
   - [ ] `smp-log quiet` + `smp-log-health 0` keeps command-driven shell validation readable.
 

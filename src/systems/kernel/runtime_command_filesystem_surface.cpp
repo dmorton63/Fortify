@@ -104,6 +104,60 @@ const char *surface_state_name(surface_state state) {
     return "unknown";
 }
 
+const char *surface_shell_region_name(surface_shell_region region) {
+    switch (region) {
+        case surface_shell_region::none: return "none";
+        case surface_shell_region::desktop_area: return "desktop-area";
+        case surface_shell_region::taskbar_terminal: return "taskbar-terminal";
+        case surface_shell_region::taskbar_explorer: return "taskbar-explorer";
+        case surface_shell_region::taskbar_tasks: return "taskbar-tasks";
+        case surface_shell_region::taskbar_clock: return "taskbar-clock";
+        case surface_shell_region::taskbar_system: return "taskbar-system";
+    }
+    return "unknown";
+}
+
+void append_shell_flags(char *out_text, uint64_t out_size, uint64_t shell_flags) {
+    if (out_text == 0 || out_size < 2) {
+        return;
+    }
+    out_text[0] = '\0';
+    const bool fixed_layout = (shell_flags & surface_shell_flag_fixed_layout) != 0;
+    const bool launcher = (shell_flags & surface_shell_flag_launcher) != 0;
+    const bool widget = (shell_flags & surface_shell_flag_widget) != 0;
+    auto append_token = [&](const char *token) {
+        if (token == 0) {
+            return;
+        }
+        uint64_t write_index = 0;
+        while (write_index + 1 < out_size && out_text[write_index] != '\0') {
+            write_index++;
+        }
+        if (out_text[0] != '\0' && write_index + 1 < out_size) {
+            out_text[write_index++] = ',';
+        }
+        uint64_t token_index = 0;
+        while (write_index + 1 < out_size && token[token_index] != '\0') {
+            out_text[write_index++] = token[token_index++];
+        }
+        out_text[write_index] = '\0';
+    };
+
+    if (!fixed_layout && !launcher && !widget) {
+        append_token("none");
+        return;
+    }
+    if (fixed_layout) {
+        append_token("fixed-layout");
+    }
+    if (launcher) {
+        append_token("launcher");
+    }
+    if (widget) {
+        append_token("widget");
+    }
+}
+
 bool parse_surface_type_token(const char *token, surface_type *out_type) {
     if (token == 0 || out_type == 0) {
         return false;
@@ -767,6 +821,8 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
             char y_hex[19];
             char w_hex[19];
             char h_hex[19];
+            char shell_flags_hex[19];
+            char shell_flags_text[64];
             kernel_format_hex64(id_hex, info.id);
             kernel_format_hex64(layer_hex, info.layer);
             kernel_format_hex64(caps_hex, info.capabilities);
@@ -774,6 +830,8 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
             kernel_format_hex64(y_hex, static_cast<uint64_t>(static_cast<int64_t>(info.y)));
             kernel_format_hex64(w_hex, info.width);
             kernel_format_hex64(h_hex, info.height);
+            kernel_format_hex64(shell_flags_hex, info.shell_flags);
+            append_shell_flags(shell_flags_text, sizeof(shell_flags_text), info.shell_flags);
             serial_write("[INFO] compositor: surface id=");
             serial_write(id_hex);
             serial_write(" type=");
@@ -792,6 +850,13 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
             serial_write(h_hex);
             serial_write(" caps=");
             serial_write(caps_hex);
+            serial_write(" shell-region=");
+            serial_write(surface_shell_region_name(info.shell_region));
+            serial_write(" shell-flags=");
+            serial_write(shell_flags_hex);
+            serial_write("(");
+            serial_write(shell_flags_text);
+            serial_write(")");
             serial_write(" title=");
             serial_write(info.title);
             serial_write("\n");
@@ -814,6 +879,13 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
             console_write(h_hex);
             console_write(" caps=");
             console_write(caps_hex);
+            console_write(" shell-region=");
+            console_write(surface_shell_region_name(info.shell_region));
+            console_write(" shell-flags=");
+            console_write(shell_flags_hex);
+            console_write("(");
+            console_write(shell_flags_text);
+            console_write(")");
             console_write(" title=");
             console_write(info.title);
             console_write("\n");
