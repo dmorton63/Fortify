@@ -280,6 +280,7 @@ bool compositor_surface_create(surface_type type,
                                uint64_t *out_surface_id);
 uint64_t compositor_surface_count(void);
 bool compositor_surface_get(uint64_t index, surface_info *out_info);
+bool compositor_focus_shell_region(surface_shell_region region);
 bool networking_init(void);
 bool webaccess_init(void);
 bool webaccess_head_request_submit(const char *target, uint64_t max_bytes, uint64_t *out_request_id);

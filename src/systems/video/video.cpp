@@ -1355,3 +1355,20 @@ bool compositor_surface_get(uint64_t index, surface_info *out_info) {
     }
     return false;
 }
+
+bool compositor_focus_shell_region(surface_shell_region region) {
+    if (!g_compositor_ready || region == surface_shell_region::none) {
+        return false;
+    }
+    for (uint64_t i = 0; i < kMaxSurfaces; i++) {
+        if (!g_surfaces[i].used) {
+            continue;
+        }
+        if (g_surfaces[i].info.shell_region != region) {
+            continue;
+        }
+        g_focused_surface_id = g_surfaces[i].info.id;
+        return true;
+    }
+    return false;
+}

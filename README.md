@@ -250,6 +250,10 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `term-scroll-up [lines]` (scroll the Command Center terminal output upward; default `8`)
 - `term-scroll-down [lines]` (scroll the Command Center terminal output downward; default `8`)
 - `term-follow` (return Command Center terminal output to tail/follow mode)
+- `terminal-launch` (focus the Terminal taskbar slot/input surface)
+- `explorer-open` (focus the Explorer taskbar slot)
+- `tasks-open` (focus the Tasks taskbar slot)
+- `system-menu-open` (focus the System taskbar slot)
 - `ap-trigger` (show current profile)
 - `ap-trigger 0` (default)
 - `ap-trigger 1` (balanced)
@@ -329,8 +333,8 @@ Desktop shell implementation checklist (Citadel layout)
   - [x] Define canonical slot geometry in compositor layout code (single source of truth).
   - [x] Keep desktop area static (no icon grid / no user drag layout).
 - [ ] Launcher actions (taskbar command wiring)
-  - [ ] Add runtime actions for each taskbar item (`terminal-launch`, `explorer-open`, `tasks-open`, `system-menu-open`).
-  - [ ] Route launcher actions through runtime-message router command target to keep serial/keyboard behavior consistent.
+  - [x] Add runtime actions for each taskbar item (`terminal-launch`, `explorer-open`, `tasks-open`, `system-menu-open`).
+  - [x] Route launcher actions through runtime-message router command target to keep serial/keyboard behavior consistent.
   - [ ] Add a `surface-focus <id|title>` command for deterministic focus switching in scripted tests.
 - [ ] Window chrome flags (borderless policy)
   - [ ] Add per-surface chrome flags (`borderless`, `minimize`, `maximize`, `close`) to compositor metadata.

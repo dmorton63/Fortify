@@ -189,6 +189,46 @@ bool parse_surface_type_token(const char *token, surface_type *out_type) {
     return false;
 }
 
+bool handle_shell_launcher_command(const char *command) {
+    if (command == 0) {
+        return false;
+    }
+
+    surface_shell_region region = surface_shell_region::none;
+    const char *status = "ready";
+    if (kernel_string_equals(command, "terminal-launch")) {
+        region = surface_shell_region::taskbar_terminal;
+        status = "terminal";
+    } else if (kernel_string_equals(command, "explorer-open")) {
+        region = surface_shell_region::taskbar_explorer;
+        status = "explorer";
+    } else if (kernel_string_equals(command, "tasks-open")) {
+        region = surface_shell_region::taskbar_tasks;
+        status = "tasks";
+    } else if (kernel_string_equals(command, "system-menu-open")) {
+        region = surface_shell_region::taskbar_system;
+        status = "system";
+    } else {
+        return false;
+    }
+
+    if (!compositor_focus_shell_region(region)) {
+        serial_write("[WARN] compositor: serial cmd launcher focus failed (shell region unavailable)\n");
+        console_write("[WARN] compositor: serial cmd launcher focus failed (shell region unavailable)\n");
+        return true;
+    }
+
+    video_set_command_center_last_command(command);
+    video_set_command_center_status(status);
+    serial_write("[INFO] compositor: serial cmd launcher dispatched ");
+    serial_write(command);
+    serial_write("\n");
+    console_write("[INFO] compositor: serial cmd launcher dispatched ");
+    console_write(command);
+    console_write("\n");
+    return true;
+}
+
 void log_fs_9p_probe_snapshot(void) {
     const uint64_t probes = filesystem_virtio_9p_probe_total();
     const uint64_t devices = filesystem_virtio_9p_device_total();
@@ -253,6 +293,9 @@ void log_fs_9p_probe_snapshot(void) {
 bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
     if (command == 0) {
         return false;
+    }
+    if (handle_shell_launcher_command(command)) {
+        return true;
     }
     if (kernel_string_equals(command, "fs-root-ls") || kernel_string_starts_with(command, "fs-root-ls ")) {
         uint8_t source = 1;

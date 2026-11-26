@@ -27,6 +27,29 @@ static constexpr uint64_t kRuntimeCommandFileMaxCommands = 32;
 
 static void handle_serial_runtime_command(const char *command);
 
+static bool copy_runtime_command_text(char *out_text, uint64_t out_size, const char *input) {
+    if (out_text == 0 || out_size < 2 || input == 0 || input[0] == '\0') {
+        return false;
+    }
+    uint64_t i = 0;
+    for (; i + 1 < out_size && input[i] != '\0'; i++) {
+        out_text[i] = input[i];
+    }
+    out_text[i] = '\0';
+    return input[i] == '\0';
+}
+
+static bool enqueue_runtime_command_message(const char *command_text) {
+    runtime_message message = {};
+    message.category = runtime_message_category::command;
+    message.target = runtime_message_target::runtime_command;
+    message.target_id = runtime_message_target_id::runtime_command_primary;
+    if (!copy_runtime_command_text(message.command_text, sizeof(message.command_text), command_text)) {
+        return false;
+    }
+    return runtime_message_router_enqueue(message);
+}
+
 static inline void kernel_out16(uint16_t port, uint16_t value) {
     __asm__ volatile ("outw %0, %1" : : "a"(value), "Nd"(port));
 }
@@ -125,7 +148,10 @@ static bool execute_runtime_command_file(const char *name_8dot3,
                 command[j] = static_cast<char>(script_bytes[start + j]);
             }
             command[line_len] = '\0';
-            handle_serial_runtime_command(command);
+            if (!enqueue_runtime_command_message(command)) {
+                g_runtime_command_file_depth--;
+                return false;
+            }
             executed++;
             if (executed >= kRuntimeCommandFileMaxCommands) {
                 break;
@@ -152,7 +178,7 @@ static bool execute_runtime_command_file(const char *name_8dot3,
 }
 
 static void log_ap_trigger_command_help(void) {
-    log_info("smp: serial cmd: shutdown|poweroff, halt, run-cmd-file <name.EXT> [source], term-scroll-up [lines], term-scroll-down [lines], term-follow, ap-trigger [0|1|2], ap-trigger, ap-stats, ap-task-start, ap-task-stop, ap-task-migrate [0|1], ap-migration-smoke [timeout-ticks], smp-log [default|quiet], smp-log-health [ticks], video-demo [0|1], video-style [0|1|2], video-speed <1..32>, video-font [0|1|2], video-text-scale <1..4>, input-kbd [0|1], net-rx-inject <count>, net-rx-stats, net-rx-smoke [count], net-rx-smoke-wait [count] [timeout-ticks], web-head <target> [max-bytes], web-head-status <request-id>, web-head-stats, web-head-smoke-wait <target> [max-bytes] [timeout-ticks], usb-inject <count>, usb-stats, usb-smoke [count], usb-smoke-wait [count] [timeout-ticks], storage-inject <count>, storage-stats, storage-smoke [count], storage-smoke-wait [count] [timeout-ticks], audio-inject <count>, audio-stats, audio-smoke [count], audio-smoke-wait [count] [timeout-ticks], webcam-inject <count>, webcam-stats, webcam-smoke [count], webcam-smoke-wait [count] [timeout-ticks], inject-all <count>, fs-root-ls [source], fs-root-head <name.EXT> [source], fs-9p-probe, fs-9p-mode [safe|experimental], fs-9p-head <path> [max-bytes], fs-9p-head-status <request-id>, fs-9p-stats, fs-9p-reset-stats, fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks], surface-create <type> <title>, surface-ls, rmsg-profile [balanced|stress|quiet], rmsg-stats, rmsg-verify, rmsg-drop-test <src|kbd|unroute>, rmsg-selftest, rmsg-reset-stats, rmsg-smoke, rmsg-smoke-extended, rmsg-backlog-test <count> [input|cmd|both], help");
+    log_info("smp: serial cmd: shutdown|poweroff, halt, run-cmd-file <name.EXT> [source], term-scroll-up [lines], term-scroll-down [lines], term-follow, terminal-launch, explorer-open, tasks-open, system-menu-open, ap-trigger [0|1|2], ap-trigger, ap-stats, ap-task-start, ap-task-stop, ap-task-migrate [0|1], ap-migration-smoke [timeout-ticks], smp-log [default|quiet], smp-log-health [ticks], video-demo [0|1], video-style [0|1|2], video-speed <1..32>, video-font [0|1|2], video-text-scale <1..4>, input-kbd [0|1], net-rx-inject <count>, net-rx-stats, net-rx-smoke [count], net-rx-smoke-wait [count] [timeout-ticks], web-head <target> [max-bytes], web-head-status <request-id>, web-head-stats, web-head-smoke-wait <target> [max-bytes] [timeout-ticks], usb-inject <count>, usb-stats, usb-smoke [count], usb-smoke-wait [count] [timeout-ticks], storage-inject <count>, storage-stats, storage-smoke [count], storage-smoke-wait [count] [timeout-ticks], audio-inject <count>, audio-stats, audio-smoke [count], audio-smoke-wait [count] [timeout-ticks], webcam-inject <count>, webcam-stats, webcam-smoke [count], webcam-smoke-wait [count] [timeout-ticks], inject-all <count>, fs-root-ls [source], fs-root-head <name.EXT> [source], fs-9p-probe, fs-9p-mode [safe|experimental], fs-9p-head <path> [max-bytes], fs-9p-head-status <request-id>, fs-9p-stats, fs-9p-reset-stats, fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks], surface-create <type> <title>, surface-ls, rmsg-profile [balanced|stress|quiet], rmsg-stats, rmsg-verify, rmsg-drop-test <src|kbd|unroute>, rmsg-selftest, rmsg-reset-stats, rmsg-smoke, rmsg-smoke-extended, rmsg-backlog-test <count> [input|cmd|both], help");
 }
 
 static void log_ap_stats_snapshot(void) {
@@ -1003,27 +1029,6 @@ void kernel_service_runtime_commands_impl(void) {
     static uint64_t easter_guard_until_tick = 0;
     static uint64_t last_serial_input_tick = 0;
     bool suppress_keyboard = false;
-    auto copy_command_text = [](char *out_text, uint64_t out_size, const char *input) {
-        if (out_text == 0 || out_size < 2 || input == 0 || input[0] == '\0') {
-            return false;
-        }
-        uint64_t i = 0;
-        for (; i + 1 < out_size && input[i] != '\0'; i++) {
-            out_text[i] = input[i];
-        }
-        out_text[i] = '\0';
-        return input[i] == '\0';
-    };
-    auto enqueue_runtime_command_message = [&](const char *command_text) {
-        runtime_message message = {};
-        message.category = runtime_message_category::command;
-        message.target = runtime_message_target::runtime_command;
-        message.target_id = runtime_message_target_id::runtime_command_primary;
-        if (!copy_command_text(message.command_text, sizeof(message.command_text), command_text)) {
-            return false;
-        }
-        return runtime_message_router_enqueue(message);
-    };
     auto enqueue_submitted_command_messages = [&]() {
         char submitted_command[kMaxCommandLength + 1] = {};
         bool queued = false;
