@@ -48,6 +48,14 @@ enum surface_shell_flags : uint64_t {
     surface_shell_flag_widget = 1ULL << 2,
 };
 
+enum surface_chrome_flags : uint64_t {
+    surface_chrome_flag_borderless = 1ULL << 0,
+    surface_chrome_flag_minimize = 1ULL << 1,
+    surface_chrome_flag_maximize = 1ULL << 2,
+    surface_chrome_flag_close = 1ULL << 3,
+    surface_chrome_flag_resizable = 1ULL << 4,
+};
+
 enum class surface_event_type : uint8_t {
     key_char = 0,
     key_backspace = 1,
@@ -87,6 +95,7 @@ struct surface_info {
     uint64_t capabilities;
     surface_shell_region shell_region;
     uint64_t shell_flags;
+    uint64_t chrome_flags;
     char title[32];
 };
 

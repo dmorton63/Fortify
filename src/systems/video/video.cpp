@@ -165,6 +165,7 @@ void clear_surface_entry(compositor_surface_entry *entry) {
     entry->info.capabilities = 0;
     entry->info.shell_region = surface_shell_region::none;
     entry->info.shell_flags = 0;
+    entry->info.chrome_flags = 0;
     for (uint64_t i = 0; i < sizeof(entry->info.title); i++) {
         entry->info.title[i] = '\0';
     }
@@ -291,6 +292,7 @@ void assign_shell_surface_metadata(surface_info *info) {
     }
     info->shell_region = surface_shell_region::none;
     info->shell_flags = 0;
+    info->chrome_flags = 0;
     if (info->type == surface_type::desktop || info->type == surface_type::workspace) {
         info->shell_region = surface_shell_region::desktop_area;
         info->shell_flags = surface_shell_flag_fixed_layout;
@@ -493,6 +495,11 @@ void assign_surface_defaults(surface_type type, surface_info *info, uint64_t ord
     info->height = 420;
     info->layer = kLayerApplications;
     info->state = surface_state::floating;
+    info->chrome_flags = surface_chrome_flag_borderless |
+                         surface_chrome_flag_minimize |
+                         surface_chrome_flag_maximize |
+                         surface_chrome_flag_close |
+                         surface_chrome_flag_resizable;
     if (type == surface_type::desktop) {
         info->x = 0;
         info->y = 0;
@@ -500,6 +507,7 @@ void assign_surface_defaults(surface_type type, surface_info *info, uint64_t ord
         info->height = g_fb != 0 ? static_cast<uint32_t>(g_fb->height) : 720U;
         info->layer = kLayerDesktop;
         info->state = surface_state::background;
+        info->chrome_flags = surface_chrome_flag_borderless;
     } else if (type == surface_type::workspace) {
         info->x = 24;
         info->y = 32;
@@ -512,6 +520,11 @@ void assign_surface_defaults(surface_type type, surface_info *info, uint64_t ord
         }
         info->layer = kLayerWorkspace;
         info->state = surface_state::anchored;
+        info->chrome_flags = surface_chrome_flag_borderless |
+                             surface_chrome_flag_minimize |
+                             surface_chrome_flag_maximize |
+                             surface_chrome_flag_close |
+                             surface_chrome_flag_resizable;
     } else if (type == surface_type::dashboard) {
         info->x = 24;
         info->y = 40;
@@ -519,6 +532,7 @@ void assign_surface_defaults(surface_type type, surface_info *info, uint64_t ord
         info->height = 260;
         info->layer = kLayerPanels;
         info->state = surface_state::panel;
+        info->chrome_flags = surface_chrome_flag_borderless | surface_chrome_flag_close;
     } else if (type == surface_type::tool) {
         info->x = 24;
         info->y = 0;
@@ -534,11 +548,17 @@ void assign_surface_defaults(surface_type type, surface_info *info, uint64_t ord
         }
         info->layer = kLayerPanels;
         info->state = surface_state::docked;
+        info->chrome_flags = surface_chrome_flag_borderless | surface_chrome_flag_close;
     } else if (type == surface_type::document) {
         info->width = 840;
         info->height = 540;
         info->layer = kLayerApplications;
         info->state = surface_state::floating;
+        info->chrome_flags = surface_chrome_flag_borderless |
+                             surface_chrome_flag_minimize |
+                             surface_chrome_flag_maximize |
+                             surface_chrome_flag_close |
+                             surface_chrome_flag_resizable;
     }
     info->shell_region = surface_shell_region::none;
     info->shell_flags = 0;

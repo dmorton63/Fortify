@@ -158,6 +158,49 @@ void append_shell_flags(char *out_text, uint64_t out_size, uint64_t shell_flags)
     }
 }
 
+void append_surface_chrome_flags(char *out_text, uint64_t out_size, uint64_t chrome_flags) {
+    if (out_text == 0 || out_size < 2) {
+        return;
+    }
+    out_text[0] = '\0';
+    const bool borderless = (chrome_flags & surface_chrome_flag_borderless) != 0;
+    const bool minimize = (chrome_flags & surface_chrome_flag_minimize) != 0;
+    const bool maximize = (chrome_flags & surface_chrome_flag_maximize) != 0;
+    const bool close = (chrome_flags & surface_chrome_flag_close) != 0;
+    const bool resizable = (chrome_flags & surface_chrome_flag_resizable) != 0;
+    auto append_token = [&](const char *token) {
+        if (token == 0) {
+            return;
+        }
+        uint64_t write_index = 0;
+        while (write_index + 1 < out_size && out_text[write_index] != '\0') {
+            write_index++;
+        }
+        if (out_text[0] != '\0' && write_index + 1 < out_size) {
+            out_text[write_index++] = ',';
+        }
+        uint64_t token_index = 0;
+        while (write_index + 1 < out_size && token[token_index] != '\0') {
+            out_text[write_index++] = token[token_index++];
+        }
+        out_text[write_index] = '\0';
+    };
+
+    if (!borderless && !minimize && !maximize && !close && !resizable) {
+        append_token("none");
+        return;
+    }
+    if (borderless) append_token("borderless");
+    if (minimize) append_token("minimize");
+    if (maximize) append_token("maximize");
+    if (close) append_token("close");
+    if (resizable) {
+        append_token("resizable");
+    } else {
+        append_token("fixed-size");
+    }
+}
+
 bool parse_hex_u64_token(const char *token, uint64_t *out_value) {
     if (token == 0 || out_value == 0) {
         return false;
@@ -989,6 +1032,8 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
             char h_hex[19];
             char shell_flags_hex[19];
             char shell_flags_text[64];
+            char chrome_flags_hex[19];
+            char chrome_flags_text[96];
             kernel_format_hex64(id_hex, info.id);
             kernel_format_hex64(layer_hex, info.layer);
             kernel_format_hex64(caps_hex, info.capabilities);
@@ -998,6 +1043,8 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
             kernel_format_hex64(h_hex, info.height);
             kernel_format_hex64(shell_flags_hex, info.shell_flags);
             append_shell_flags(shell_flags_text, sizeof(shell_flags_text), info.shell_flags);
+            kernel_format_hex64(chrome_flags_hex, info.chrome_flags);
+            append_surface_chrome_flags(chrome_flags_text, sizeof(chrome_flags_text), info.chrome_flags);
             serial_write("[INFO] compositor: surface id=");
             serial_write(id_hex);
             serial_write(" type=");
@@ -1022,6 +1069,11 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
             serial_write(shell_flags_hex);
             serial_write("(");
             serial_write(shell_flags_text);
+            serial_write(")");
+            serial_write(" chrome=");
+            serial_write(chrome_flags_hex);
+            serial_write("(");
+            serial_write(chrome_flags_text);
             serial_write(")");
             serial_write(" title=");
             serial_write(info.title);
@@ -1051,6 +1103,11 @@ bool kernel_handle_filesystem_surface_runtime_command(const char *command) {
             console_write(shell_flags_hex);
             console_write("(");
             console_write(shell_flags_text);
+            console_write(")");
+            console_write(" chrome=");
+            console_write(chrome_flags_hex);
+            console_write("(");
+            console_write(chrome_flags_text);
             console_write(")");
             console_write(" title=");
             console_write(info.title);

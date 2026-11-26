@@ -309,7 +309,7 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks]` (queue one virtio-9p head request and return immediately; completion logs asynchronously as done-ok/done-err/timeout; defaults: max `256`, timeout `600` ticks; with `QEMU_SHARE_ENABLE=1`, requests are safety-gated to avoid AP-worker lockups; when `SHARE_README_BRIDGE=1`, requests use a safe bridge-blob fallback and can report `done-ok`)
 - `surface-create <type> <title>` (create a compositor-owned surface; type: `desktop|application|document|workspace|dashboard|tool`; title is a single token, use `_` for spaces)
 - `surface-focus <id|title>` (focus a compositor surface by id (`0x...` or decimal) or by title token using `_` for spaces)
-- `surface-ls` (list compositor surfaces with id/type/state/layer/position/size/title plus shell-region and shell-flag metadata)
+- `surface-ls` (list compositor surfaces with id/type/state/layer/position/size/title plus shell-region, shell-flag, and chrome-policy metadata)
 - `rmsg-profile [balanced|stress|quiet]` (show/set runtime-message router test profile: backlog warning depth/debounce, backlog-test pause ticks, and smoke-extended backlog count)
 - `rmsg-stats` (print a compact runtime-message router snapshot: queue depth/high-water/drop, aggregate flow, drop reasons, and per-target queue/flow)
 - `rmsg-verify` (run router counter consistency checks and report `pass|fail` with a failure-bitmask)
@@ -333,14 +333,14 @@ Desktop shell implementation checklist (Citadel layout)
   - [x] Reserve fixed regions for `Terminal | Explorer | Tasks | Clock | System`.
   - [x] Define canonical slot geometry in compositor layout code (single source of truth).
   - [x] Keep desktop area static (no icon grid / no user drag layout).
-- [ ] Launcher actions (taskbar command wiring)
+- [x] Launcher actions (taskbar command wiring)
   - [x] Add runtime actions for each taskbar item (`terminal-launch`, `explorer-open`, `tasks-open`, `system-menu-open`).
   - [x] Route launcher actions through runtime-message router command target to keep serial/keyboard behavior consistent.
   - [x] Add a `surface-focus <id|title>` command for deterministic focus switching in scripted tests.
-- [ ] Window chrome flags (borderless policy)
-  - [ ] Add per-surface chrome flags (`borderless`, `minimize`, `maximize`, `close`) to compositor metadata.
-  - [ ] Default application/document/workspace surfaces to borderless chrome with the three controls only.
-  - [ ] Keep dashboard/tool surfaces (for `Command Center` / `Input Surface`) non-resizable by policy.
+- [x] Window chrome flags (borderless policy)
+  - [x] Add per-surface chrome flags (`borderless`, `minimize`, `maximize`, `close`) to compositor metadata.
+  - [x] Default application/document/workspace surfaces to borderless chrome with the three controls only.
+  - [x] Keep dashboard/tool surfaces (for `Command Center` / `Input Surface`) non-resizable by policy.
 - [ ] Security-status widget wiring (taskbar right side)
   - [ ] Add a compact widget model (`tpm`, `secure_boot`, `network`, overall health color).
   - [ ] Populate initial values from existing runtime health paths and surface them in one compositor status line.
