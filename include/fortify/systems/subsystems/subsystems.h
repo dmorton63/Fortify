@@ -173,6 +173,12 @@ bool filesystem_fat32_read_root_file_head(uint8_t source,
                                           uint64_t max_bytes,
                                           uint64_t *out_bytes,
                                           uint64_t *out_checksum);
+bool filesystem_fat32_read_root_file_bytes(uint8_t source,
+                                           const char *name_8dot3,
+                                           uint8_t *out_buffer,
+                                           uint64_t max_bytes,
+                                           uint64_t *out_bytes,
+                                           uint64_t *out_checksum);
 void filesystem_set_sector_reader(filesystem_sector_reader_t reader);
 bool filesystem_has_sector_reader(void);
 uint64_t filesystem_sector_read_total(void);

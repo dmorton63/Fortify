@@ -1355,6 +1355,8 @@ uint64_t read_fat32_file_head(const fat32_dir_entry_info &entry,
                               const fat32_volume_geometry &geometry,
                               uint8_t source,
                               uint64_t max_read,
+                              uint8_t *out_buffer,
+                              uint64_t out_buffer_size,
                               uint64_t *out_checksum) {
     if (!entry.valid || entry.is_directory || entry.first_cluster < 2 || !geometry.valid) {
         return 0;
@@ -1369,6 +1371,9 @@ uint64_t read_fat32_file_head(const fat32_dir_entry_info &entry,
                                    static_cast<uint64_t>(geometry.sectors_per_cluster);
     const uint64_t readable = (length < cluster_bytes) ? length : cluster_bytes;
     if (readable == 0) {
+        return 0;
+    }
+    if (out_buffer != 0 && out_buffer_size < readable) {
         return 0;
     }
     uint8_t scratch[256];
@@ -1391,6 +1396,11 @@ uint64_t read_fat32_file_head(const fat32_dir_entry_info &entry,
     }
     if (copied == 0) {
         return 0;
+    }
+    if (out_buffer != 0) {
+        for (uint64_t i = 0; i < copied; i++) {
+            out_buffer[i] = scratch[i];
+        }
     }
     uint64_t checksum = 0;
     for (uint64_t i = 0; i < copied; i++) {
@@ -1622,7 +1632,7 @@ void process_storage_event(const storage_event &event) {
     }
 
     __atomic_fetch_add(&g_fs_fat32_read_attempt_total, 1, __ATOMIC_RELAXED);
-    const uint64_t read_bytes = read_fat32_file_head(file, geometry, event.source, 256, 0);
+    const uint64_t read_bytes = read_fat32_file_head(file, geometry, event.source, 256, 0, 0, 0);
     if (read_bytes == 0) {
         return;
     }
@@ -1705,7 +1715,47 @@ bool fat32_read_root_file_head_impl(uint8_t source,
         return false;
     }
 
-    const uint64_t read_bytes = read_fat32_file_head(file, geometry, source, max_bytes, out_checksum);
+    const uint64_t read_bytes = read_fat32_file_head(file, geometry, source, max_bytes, 0, 0, out_checksum);
+    if (read_bytes == 0) {
+        return false;
+    }
+    *out_bytes = read_bytes;
+    return true;
+}
+
+bool fat32_read_root_file_bytes_impl(uint8_t source,
+                                     const char *name_8dot3,
+                                     uint8_t *out_buffer,
+                                     uint64_t max_bytes,
+                                     uint64_t *out_bytes,
+                                     uint64_t *out_checksum) {
+    if (name_8dot3 == 0 || out_buffer == 0 || out_bytes == 0 || max_bytes == 0) {
+        return false;
+    }
+    *out_bytes = 0;
+    if (out_checksum != 0) {
+        *out_checksum = 0;
+    }
+
+    char name11[11];
+    if (!normalize_name_8dot3_to_entry11(name_8dot3, name11)) {
+        return false;
+    }
+
+    fat32_volume_geometry geometry = {};
+    uint8_t root_cluster[4096];
+    uint64_t cluster_bytes = 0;
+    if (!load_fat32_root_cluster(source, &geometry, root_cluster, sizeof(root_cluster), &cluster_bytes)) {
+        return false;
+    }
+
+    const fat32_dir_entry_info file = find_fat32_root_entry(root_cluster, cluster_bytes, name11);
+    if (!file.valid || file.is_directory) {
+        return false;
+    }
+
+    const uint64_t read_bytes =
+        read_fat32_file_head(file, geometry, source, max_bytes, out_buffer, max_bytes, out_checksum);
     if (read_bytes == 0) {
         return false;
     }
@@ -1791,6 +1841,16 @@ bool filesystem_fat32_read_root_file_head(uint8_t source,
                                           uint64_t *out_bytes,
                                           uint64_t *out_checksum) {
     return fat32_read_root_file_head_impl(source, name_8dot3, max_bytes, out_bytes, out_checksum);
+}
+
+bool filesystem_fat32_read_root_file_bytes(uint8_t source,
+                                           const char *name_8dot3,
+                                           uint8_t *out_buffer,
+                                           uint64_t max_bytes,
+                                           uint64_t *out_bytes,
+                                           uint64_t *out_checksum) {
+    return fat32_read_root_file_bytes_impl(
+        source, name_8dot3, out_buffer, max_bytes, out_bytes, out_checksum);
 }
 
 bool filesystem_init(void) {

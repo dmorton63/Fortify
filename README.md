@@ -244,6 +244,7 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 
 - `shutdown` / `poweroff` (attempt ACPI poweroff, then use QEMU debug-exit fallback to terminate the VM)
 - `halt` (terminate the VM via QEMU debug-exit fallback)
+- `run-cmd-file <name.EXT> [source]` (load a FAT32 root file from source `1` by default and execute each non-empty line as a runtime command; supports `#` line comments and up to 32 commands per file)
 - `ap-trigger` (show current profile)
 - `ap-trigger 0` (default)
 - `ap-trigger 1` (balanced)
@@ -289,6 +290,7 @@ While `make run` is active (`-serial stdio`), you can type runtime commands:
 - `inject-all <count>` (inject the same count into network/USB/storage/audio/webcam in one command)
 - `fs-root-ls [source]` (list FAT32 root entries from source `1` by default; optional source `0..255`)
 - `fs-root-head <name.EXT> [source]` (read up to 256 bytes from a FAT32 root file head and log byte count/checksum)
+- `run-cmd-file <name.EXT> [source]` (execute commands from a root-file script; file read cap 256 bytes and per-line command cap 95 chars)
 - `fs-9p-probe` (re-probe PCI for virtio-9p transport and log device count + last BDF/device id)
 - `fs-9p-mode [safe|experimental]` (show/set share-mode 9p execution mode; default `safe`; `experimental` is currently blocked in share builds by a lock-guard and reports a warning)
 - `fs-9p-head <path> [max-bytes]` (queue an async virtio-9p head read request; max defaults to 256, caps at 2048)

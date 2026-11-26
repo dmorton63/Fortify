@@ -21,6 +21,11 @@ static bool g_runtime_keyboard_events_to_commands = true;
 static uint64_t g_runtime_router_dequeue_pause_until_tick = 0;
 static uint64_t g_runtime_backlog_test_pause_ticks = 300;
 static uint64_t g_runtime_smoke_extended_backlog_count = 16;
+static uint64_t g_runtime_command_file_depth = 0;
+static constexpr uint64_t kRuntimeCommandFileMaxBytes = 256;
+static constexpr uint64_t kRuntimeCommandFileMaxCommands = 32;
+
+static void handle_serial_runtime_command(const char *command);
 
 static inline void kernel_out16(uint16_t port, uint16_t value) {
     __asm__ volatile ("outw %0, %1" : : "a"(value), "Nd"(port));
@@ -51,8 +56,103 @@ static inline void kernel_out32(uint16_t port, uint32_t value) {
     kernel_qemu_debug_exit(0);
 }
 
+static bool execute_runtime_command_file(const char *name_8dot3,
+                                         uint8_t source,
+                                         uint64_t *out_executed,
+                                         uint64_t *out_bytes,
+                                         uint64_t *out_checksum) {
+    if (out_executed != 0) {
+        *out_executed = 0;
+    }
+    if (out_bytes != 0) {
+        *out_bytes = 0;
+    }
+    if (out_checksum != 0) {
+        *out_checksum = 0;
+    }
+    if (name_8dot3 == 0 || name_8dot3[0] == '\0') {
+        return false;
+    }
+    if (g_runtime_command_file_depth >= 2) {
+        return false;
+    }
+
+    uint8_t script_bytes[kRuntimeCommandFileMaxBytes + 1];
+    uint64_t bytes_read = 0;
+    uint64_t checksum = 0;
+    if (!filesystem_fat32_read_root_file_bytes(source,
+                                               name_8dot3,
+                                               script_bytes,
+                                               kRuntimeCommandFileMaxBytes,
+                                               &bytes_read,
+                                               &checksum)) {
+        return false;
+    }
+    if (bytes_read == 0 || bytes_read > kRuntimeCommandFileMaxBytes) {
+        return false;
+    }
+    script_bytes[bytes_read] = '\0';
+
+    g_runtime_command_file_depth++;
+    uint64_t executed = 0;
+    uint64_t line_start = 0;
+    for (uint64_t i = 0; i <= bytes_read; i++) {
+        const uint8_t ch = script_bytes[i];
+        const bool at_end = (i == bytes_read);
+        const bool is_break = (!at_end && (ch == '\n' || ch == '\r'));
+        if (!at_end && !is_break) {
+            continue;
+        }
+
+        uint64_t start = line_start;
+        uint64_t end = i;
+        while (start < end && (script_bytes[start] == ' ' || script_bytes[start] == '\t')) {
+            start++;
+        }
+        while (end > start &&
+               (script_bytes[end - 1] == ' ' || script_bytes[end - 1] == '\t')) {
+            end--;
+        }
+
+        if (end > start && script_bytes[start] != '#') {
+            char command[96];
+            const uint64_t line_len = end - start;
+            if (line_len >= sizeof(command)) {
+                g_runtime_command_file_depth--;
+                return false;
+            }
+            for (uint64_t j = 0; j < line_len; j++) {
+                command[j] = static_cast<char>(script_bytes[start + j]);
+            }
+            command[line_len] = '\0';
+            handle_serial_runtime_command(command);
+            executed++;
+            if (executed >= kRuntimeCommandFileMaxCommands) {
+                break;
+            }
+        }
+
+        if (!at_end && ch == '\r' && (i + 1) < bytes_read && script_bytes[i + 1] == '\n') {
+            i++;
+        }
+        line_start = i + 1;
+    }
+    g_runtime_command_file_depth--;
+
+    if (out_executed != 0) {
+        *out_executed = executed;
+    }
+    if (out_bytes != 0) {
+        *out_bytes = bytes_read;
+    }
+    if (out_checksum != 0) {
+        *out_checksum = checksum;
+    }
+    return true;
+}
+
 static void log_ap_trigger_command_help(void) {
-    log_info("smp: serial cmd: shutdown|poweroff, halt, ap-trigger [0|1|2], ap-trigger, ap-stats, ap-task-start, ap-task-stop, ap-task-migrate [0|1], ap-migration-smoke [timeout-ticks], smp-log [default|quiet], smp-log-health [ticks], video-demo [0|1], video-style [0|1|2], video-speed <1..32>, video-font [0|1|2], video-text-scale <1..4>, input-kbd [0|1], net-rx-inject <count>, net-rx-stats, net-rx-smoke [count], net-rx-smoke-wait [count] [timeout-ticks], web-head <target> [max-bytes], web-head-status <request-id>, web-head-stats, web-head-smoke-wait <target> [max-bytes] [timeout-ticks], usb-inject <count>, usb-stats, usb-smoke [count], usb-smoke-wait [count] [timeout-ticks], storage-inject <count>, storage-stats, storage-smoke [count], storage-smoke-wait [count] [timeout-ticks], audio-inject <count>, audio-stats, audio-smoke [count], audio-smoke-wait [count] [timeout-ticks], webcam-inject <count>, webcam-stats, webcam-smoke [count], webcam-smoke-wait [count] [timeout-ticks], inject-all <count>, fs-root-ls [source], fs-root-head <name.EXT> [source], fs-9p-probe, fs-9p-mode [safe|experimental], fs-9p-head <path> [max-bytes], fs-9p-head-status <request-id>, fs-9p-stats, fs-9p-reset-stats, fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks], surface-create <type> <title>, surface-ls, rmsg-profile [balanced|stress|quiet], rmsg-stats, rmsg-verify, rmsg-drop-test <src|kbd|unroute>, rmsg-selftest, rmsg-reset-stats, rmsg-smoke, rmsg-smoke-extended, rmsg-backlog-test <count> [input|cmd|both], help");
+    log_info("smp: serial cmd: shutdown|poweroff, halt, run-cmd-file <name.EXT> [source], ap-trigger [0|1|2], ap-trigger, ap-stats, ap-task-start, ap-task-stop, ap-task-migrate [0|1], ap-migration-smoke [timeout-ticks], smp-log [default|quiet], smp-log-health [ticks], video-demo [0|1], video-style [0|1|2], video-speed <1..32>, video-font [0|1|2], video-text-scale <1..4>, input-kbd [0|1], net-rx-inject <count>, net-rx-stats, net-rx-smoke [count], net-rx-smoke-wait [count] [timeout-ticks], web-head <target> [max-bytes], web-head-status <request-id>, web-head-stats, web-head-smoke-wait <target> [max-bytes] [timeout-ticks], usb-inject <count>, usb-stats, usb-smoke [count], usb-smoke-wait [count] [timeout-ticks], storage-inject <count>, storage-stats, storage-smoke [count], storage-smoke-wait [count] [timeout-ticks], audio-inject <count>, audio-stats, audio-smoke [count], audio-smoke-wait [count] [timeout-ticks], webcam-inject <count>, webcam-stats, webcam-smoke [count], webcam-smoke-wait [count] [timeout-ticks], inject-all <count>, fs-root-ls [source], fs-root-head <name.EXT> [source], fs-9p-probe, fs-9p-mode [safe|experimental], fs-9p-head <path> [max-bytes], fs-9p-head-status <request-id>, fs-9p-stats, fs-9p-reset-stats, fs-9p-smoke-wait <path> [max-bytes] [timeout-ticks], surface-create <type> <title>, surface-ls, rmsg-profile [balanced|stress|quiet], rmsg-stats, rmsg-verify, rmsg-drop-test <src|kbd|unroute>, rmsg-selftest, rmsg-reset-stats, rmsg-smoke, rmsg-smoke-extended, rmsg-backlog-test <count> [input|cmd|both], help");
 }
 
 static void log_ap_stats_snapshot(void) {
@@ -363,6 +463,78 @@ static void handle_serial_runtime_command(const char *command) {
         serial_write("[INFO] smp: serial cmd halt halting CPUs\n");
         console_write("[INFO] smp: serial cmd halt halting CPUs\n");
         kernel_qemu_debug_exit(0);
+    }
+    if (kernel_string_starts_with(command, "run-cmd-file ")) {
+        char name_token[16];
+        char source_token[8];
+        uint64_t cursor = 13;
+        if (!kernel_parse_token(command, cursor, name_token, sizeof(name_token), &cursor)) {
+            serial_write("[WARN] smp: serial cmd run-cmd-file expects <name.EXT> [source]\n");
+            console_write("[WARN] smp: serial cmd run-cmd-file expects <name.EXT> [source]\n");
+            return;
+        }
+        uint8_t source = 1;
+        if (kernel_parse_token(command, cursor, source_token, sizeof(source_token), &cursor)) {
+            if (!kernel_parse_u8_decimal(source_token, &source)) {
+                serial_write("[WARN] smp: serial cmd run-cmd-file source expects 0..255\n");
+                console_write("[WARN] smp: serial cmd run-cmd-file source expects 0..255\n");
+                return;
+            }
+            char extra_token[4];
+            if (kernel_parse_token(command, cursor, extra_token, sizeof(extra_token), 0)) {
+                serial_write("[WARN] smp: serial cmd run-cmd-file accepts only <name.EXT> [source]\n");
+                console_write("[WARN] smp: serial cmd run-cmd-file accepts only <name.EXT> [source]\n");
+                return;
+            }
+        }
+
+        uint64_t executed = 0;
+        uint64_t bytes = 0;
+        uint64_t checksum = 0;
+        if (!execute_runtime_command_file(name_token, source, &executed, &bytes, &checksum)) {
+            serial_write("[WARN] smp: serial cmd run-cmd-file failed (FAT32 root file unavailable/invalid)\n");
+            console_write("[WARN] smp: serial cmd run-cmd-file failed (FAT32 root file unavailable/invalid)\n");
+            return;
+        }
+
+        char executed_hex[19];
+        char bytes_hex[19];
+        char checksum_hex[19];
+        kernel_format_hex64(executed_hex, executed);
+        kernel_format_hex64(bytes_hex, bytes);
+        kernel_format_hex64(checksum_hex, checksum);
+        serial_write("[INFO] smp: serial cmd run-cmd-file pass file=");
+        serial_write(name_token);
+        serial_write(" source=");
+        char source_text[4];
+        source_text[0] = static_cast<char>('0' + (source / 100) % 10);
+        source_text[1] = static_cast<char>('0' + (source / 10) % 10);
+        source_text[2] = static_cast<char>('0' + (source % 10));
+        source_text[3] = '\0';
+        uint64_t source_start = 0;
+        while (source_start < 2 && source_text[source_start] == '0') {
+            source_start++;
+        }
+        serial_write(source_text + source_start);
+        serial_write(" executed=");
+        serial_write(executed_hex);
+        serial_write(" bytes=");
+        serial_write(bytes_hex);
+        serial_write(" checksum=");
+        serial_write(checksum_hex);
+        serial_write("\n");
+        console_write("[INFO] smp: serial cmd run-cmd-file pass file=");
+        console_write(name_token);
+        console_write(" source=");
+        console_write(source_text + source_start);
+        console_write(" executed=");
+        console_write(executed_hex);
+        console_write(" bytes=");
+        console_write(bytes_hex);
+        console_write(" checksum=");
+        console_write(checksum_hex);
+        console_write("\n");
+        return;
     }
     if (kernel_string_equals(command, "ap-trigger")) {
         char profile_hex[19];
