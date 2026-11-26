@@ -211,9 +211,10 @@ kernel is still flooding logs. You can tune this:
 QEMU_SERIAL_INPUT_DELAY=4 QEMU_SERIAL_INPUT="fs-root-ls\n" make run-stress
 ```
 
-By default, `log_info` entries are serial-only to keep on-screen output quieter.
-Warnings/errors still mirror to both serial and display. Define
-`FORTIFY_DISPLAY_INFO_LOGS=1` at build time to mirror info logs to display too.
+By default, `log_info` entries and SMP info diagnostics are serial-only to keep
+on-screen output quieter. Warnings/errors still mirror to both serial and display.
+Use `make DISPLAY_LOGS=1 DISPLAY_INFO_LOGS=1 ...` to mirror info diagnostics to
+display too; `DISPLAY_LOGS` remains the master display-output switch.
 
 ## Stress Mode (AP Work Queue)
 

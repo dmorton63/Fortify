@@ -6,6 +6,16 @@
 #include "fortify/systems/serial/serial.h"
 #include "fortify/systems/subsystems/subsystems.h"
 
+#ifndef FORTIFY_DISPLAY_LOGS
+#define FORTIFY_DISPLAY_LOGS 1
+#endif
+
+#ifndef FORTIFY_DISPLAY_INFO_LOGS
+#define FORTIFY_DISPLAY_INFO_LOGS 0
+#endif
+
+// Match log.cpp's screen severity policy; serial output stays unconditional.
+
 void log_smp_online_update(uint64_t online, uint64_t total, uint64_t scheduler_online) {
     char online_hex[19];
     char total_hex[19];
@@ -22,6 +32,7 @@ void log_smp_online_update(uint64_t online, uint64_t total, uint64_t scheduler_o
     serial_write(sched_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: online cpus=");
     console_write(online_hex);
     console_write("/");
@@ -29,6 +40,7 @@ void log_smp_online_update(uint64_t online, uint64_t total, uint64_t scheduler_o
     console_write(" scheduler-online=");
     console_write(sched_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_wake_update(uint64_t total_wakes) {
@@ -39,9 +51,11 @@ void log_smp_ap_wake_update(uint64_t total_wakes) {
     serial_write(wakes_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP wake count total=");
     console_write(wakes_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_ready_update(uint64_t ready, uint64_t expected) {
@@ -56,11 +70,13 @@ void log_smp_ap_ready_update(uint64_t ready, uint64_t expected) {
     serial_write(expected_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP interruptible-ready=");
     console_write(ready_hex);
     console_write("/");
     console_write(expected_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ipi_observed_update(uint64_t observed_total) {
@@ -71,9 +87,11 @@ void log_smp_ipi_observed_update(uint64_t observed_total) {
     serial_write(observed_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: IPI kick interrupt observed total=");
     console_write(observed_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ipi_scheduler_update(uint64_t total) {
@@ -84,9 +102,11 @@ void log_smp_ipi_scheduler_update(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: IPI scheduler preempt requests total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ipi_scheduler_cpu_update(uint64_t cpu_index, uint64_t count) {
@@ -101,11 +121,13 @@ void log_smp_ipi_scheduler_cpu_update(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: IPI scheduler preempt cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_work_dispatch_total(uint64_t total) {
@@ -116,9 +138,11 @@ void log_smp_ap_work_dispatch_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP work dispatch total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_work_dispatch_cpu(uint64_t cpu_index, uint64_t count) {
@@ -133,11 +157,13 @@ void log_smp_ap_work_dispatch_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP work dispatch cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_work_execute_total(uint64_t total) {
@@ -148,9 +174,11 @@ void log_smp_ap_work_execute_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP work execute total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_work_execute_cpu(uint64_t cpu_index, uint64_t count) {
@@ -165,11 +193,13 @@ void log_smp_ap_work_execute_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP work execute cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_maintenance_dispatch_total(uint64_t total) {
@@ -180,9 +210,11 @@ void log_smp_ap_maintenance_dispatch_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP maintenance dispatch total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_maintenance_dispatch_cpu(uint64_t cpu_index, uint64_t count) {
@@ -197,11 +229,13 @@ void log_smp_ap_maintenance_dispatch_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP maintenance dispatch cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_maintenance_execute_total(uint64_t total) {
@@ -212,9 +246,11 @@ void log_smp_ap_maintenance_execute_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP maintenance execute total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_maintenance_execute_cpu(uint64_t cpu_index, uint64_t count) {
@@ -229,11 +265,13 @@ void log_smp_ap_maintenance_execute_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP maintenance execute cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_networking_dispatch_total(uint64_t total) {
@@ -244,9 +282,11 @@ void log_smp_ap_networking_dispatch_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP networking dispatch total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_networking_dispatch_cpu(uint64_t cpu_index, uint64_t count) {
@@ -261,11 +301,13 @@ void log_smp_ap_networking_dispatch_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP networking dispatch cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_networking_execute_total(uint64_t total) {
@@ -276,9 +318,11 @@ void log_smp_ap_networking_execute_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP networking execute total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_networking_execute_cpu(uint64_t cpu_index, uint64_t count) {
@@ -293,11 +337,13 @@ void log_smp_ap_networking_execute_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP networking execute cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_port_ap_job_total(uint64_t total) {
@@ -308,9 +354,11 @@ void log_smp_port_ap_job_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] ports: AP deferred jobs total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_port_ap_job_cpu(uint64_t cpu_index, uint64_t count) {
@@ -325,11 +373,13 @@ void log_smp_port_ap_job_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] ports: AP deferred job cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_networking_ap_job_total(uint64_t total) {
@@ -340,9 +390,11 @@ void log_smp_networking_ap_job_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] networking: AP deferred jobs total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_networking_rx_packets_total(uint64_t total) {
@@ -353,9 +405,11 @@ void log_smp_networking_rx_packets_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] networking: AP RX packets total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_networking_rx_batches_total(uint64_t total) {
@@ -366,9 +420,11 @@ void log_smp_networking_rx_batches_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] networking: AP RX batches total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_filesystem_ap_job_total(uint64_t total) {
@@ -379,9 +435,11 @@ void log_smp_filesystem_ap_job_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] filesystem: AP deferred jobs total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_filesystem_ap_job_cpu(uint64_t cpu_index, uint64_t count) {
@@ -396,11 +454,13 @@ void log_smp_filesystem_ap_job_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] filesystem: AP deferred job cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_usb_ap_job_total(uint64_t total) {
@@ -411,9 +471,11 @@ void log_smp_usb_ap_job_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] usb: AP deferred jobs total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_networking_ap_job_cpu(uint64_t cpu_index, uint64_t count) {
@@ -428,11 +490,13 @@ void log_smp_networking_ap_job_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] networking: AP deferred job cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_networking_rx_packets_cpu(uint64_t cpu_index, uint64_t count) {
@@ -447,11 +511,13 @@ void log_smp_networking_rx_packets_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] networking: AP RX packets cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_networking_rx_batches_cpu(uint64_t cpu_index, uint64_t count) {
@@ -466,11 +532,13 @@ void log_smp_networking_rx_batches_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] networking: AP RX batches cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_usb_ap_job_cpu(uint64_t cpu_index, uint64_t count) {
@@ -485,11 +553,13 @@ void log_smp_usb_ap_job_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] usb: AP deferred job cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_work_queue_depth_total(uint64_t depth_total, uint64_t nonzero_cpus) {
@@ -504,11 +574,13 @@ void log_smp_ap_work_queue_depth_total(uint64_t depth_total, uint64_t nonzero_cp
     serial_write(cpus_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP work queue depth total=");
     console_write(depth_hex);
     console_write(" nonzero-cpus=");
     console_write(cpus_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_work_drop_total(uint64_t total) {
@@ -519,9 +591,11 @@ void log_smp_ap_work_drop_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS
     console_write("[WARN] smp: AP work drop total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_work_skip_rate_limit_total(uint64_t total) {
@@ -532,9 +606,11 @@ void log_smp_ap_work_skip_rate_limit_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP work enqueue skip rate-limit total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_work_skip_pending_cap_total(uint64_t total) {
@@ -545,9 +621,11 @@ void log_smp_ap_work_skip_pending_cap_total(uint64_t total) {
     serial_write(total_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: AP work enqueue skip pending-cap total=");
     console_write(total_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_work_drop_cpu(uint64_t cpu_index, uint64_t count) {
@@ -562,11 +640,13 @@ void log_smp_ap_work_drop_cpu(uint64_t cpu_index, uint64_t count) {
     serial_write(count_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS
     console_write("[WARN] smp: AP work drop cpu=");
     console_write(cpu_hex);
     console_write(" count=");
     console_write(count_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_self_test_summary(bool pass, uint64_t ap_ok, uint64_t ap_expected,
@@ -592,6 +672,7 @@ void log_smp_self_test_summary(bool pass, uint64_t ap_ok, uint64_t ap_expected,
     serial_write(execute_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: self-test ap-work=");
     console_write(pass ? "pass" : "pending");
     console_write(" ap-ok=");
@@ -603,6 +684,7 @@ void log_smp_self_test_summary(bool pass, uint64_t ap_ok, uint64_t ap_expected,
     console_write(" execute=");
     console_write(execute_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_migration_self_test_summary(bool pass,
@@ -631,6 +713,7 @@ void log_smp_migration_self_test_summary(bool pass,
     serial_write(expected_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: self-test migration=");
     console_write(pass ? "pass" : "pending");
     console_write(" active=");
@@ -642,6 +725,7 @@ void log_smp_migration_self_test_summary(bool pass,
     console_write(" expected=");
     console_write(expected_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_ap_work_kinds_summary(uint64_t maintenance_execute_total,
@@ -682,6 +766,7 @@ void log_smp_ap_work_kinds_summary(uint64_t maintenance_execute_total,
     serial_write(pinned_hex);
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: ap-work kinds maintenance/net=");
     console_write(maintenance_hex);
     console_write("/");
@@ -697,6 +782,7 @@ void log_smp_ap_work_kinds_summary(uint64_t maintenance_execute_total,
     console_write(" ap-task=");
     console_write(pinned_hex);
     console_write("\n");
+#endif
 }
 
 void log_smp_health_snapshot(uint64_t online,
@@ -879,6 +965,7 @@ void log_smp_health_snapshot(uint64_t online,
     serial_write(self_test_pass ? "pass" : "pending");
     serial_write("\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: health online=");
     console_write(online_hex);
     console_write("/");
@@ -952,6 +1039,7 @@ void log_smp_health_snapshot(uint64_t online,
     console_write(" selftest=");
     console_write(self_test_pass ? "pass" : "pending");
     console_write("\n");
+#endif
 }
 
 void log_smp_kick_mode(uint64_t mode) {
@@ -960,9 +1048,11 @@ void log_smp_kick_mode(uint64_t mode) {
     serial_write("[INFO] smp: IPI kick mode=");
     serial_write(mode_hex);
     serial_write(" (1=directed,2=bcast-excl-self,3=bcast-incl-self)\n");
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: IPI kick mode=");
     console_write(mode_hex);
     console_write(" (1=directed,2=bcast-excl-self,3=bcast-incl-self)\n");
+#endif
 }
 
 void log_smp_ipi_diag_snapshot(void) {
@@ -1002,6 +1092,7 @@ void log_smp_ipi_diag_snapshot(void) {
     serial_write(result_hex);
     serial_write(" (path:1=x2apic,2=mmio)\n");
 
+#if FORTIFY_DISPLAY_LOGS && FORTIFY_DISPLAY_INFO_LOGS
     console_write("[INFO] smp: IPI diag mode=");
     console_write(mode_hex);
     console_write(" path=");
@@ -1019,4 +1110,5 @@ void log_smp_ipi_diag_snapshot(void) {
     console_write(" result=");
     console_write(result_hex);
     console_write(" (path:1=x2apic,2=mmio)\n");
+#endif
 }
