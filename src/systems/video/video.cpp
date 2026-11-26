@@ -292,7 +292,7 @@ void assign_shell_surface_metadata(surface_info *info) {
     }
     info->shell_region = surface_shell_region::none;
     info->shell_flags = 0;
-    info->chrome_flags = 0;
+    // Preserve the chrome defaults for ordinary windows.
     if (info->type == surface_type::desktop || info->type == surface_type::workspace) {
         info->shell_region = surface_shell_region::desktop_area;
         info->shell_flags = surface_shell_flag_fixed_layout;
@@ -309,6 +309,7 @@ void assign_shell_surface_metadata(surface_info *info) {
         return;
     }
     assign_taskbar_slot_geometry(slot, info);
+    info->chrome_flags = surface_chrome_flag_borderless;
     info->shell_region = region;
     info->shell_flags = surface_shell_flag_fixed_layout | surface_shell_flag_launcher;
     if (slot == shell_taskbar_slot::clock) {
@@ -641,8 +642,96 @@ void draw_taskbar_slot(surface_shell_region region,
     draw_line(x, y + h - 1, x + w - 1, y + h - 1, border);
     draw_line(x, y, x, y + h - 1, border);
     draw_line(x + w - 1, y, x + w - 1, y + h - 1, border);
-    draw_text(x + 10, y + 10, label, compose_rgb(226, 240, 255), bg);
-    draw_text(x + 10, y + 30, value, compose_rgb(188, 212, 244), bg);
+    const uint64_t saved_scale = g_text_scale;
+    g_text_scale = w >= 180 ? 2 : 1;
+    const uint64_t columns = w > 20 ? static_cast<uint64_t>(w - 20) / (kGlyphW * g_text_scale) : 0;
+    char clipped[96];
+    const char *lines[2] = {label, value};
+    for (uint64_t row = 0; row < 2; row++) {
+        uint64_t n = 0;
+        while (lines[row][n] != '\0' && n < columns && n + 1 < sizeof(clipped)) {
+            clipped[n] = lines[row][n];
+            n++;
+        }
+        clipped[n] = '\0';
+        draw_text(x + 10, y + 10 + static_cast<int32_t>(row * 22),
+                  clipped, row == 0 ? compose_rgb(226, 240, 255) : compose_rgb(188, 212, 244), bg);
+    }
+    g_text_scale = saved_scale;
+}
+
+void draw_terminal_row(int32_t x, int32_t y, uint64_t columns,
+                       const char *text, uint32_t fg, uint32_t bg, bool tail = false) {
+    char clipped[128];
+    uint64_t length = 0;
+    while (text[length] != '\0') length++;
+    if (columns >= sizeof(clipped)) columns = sizeof(clipped) - 1;
+    const uint64_t start = tail && length > columns ? length - columns : 0;
+    uint64_t n = 0;
+    while (text[start + n] != '\0' && n < columns) {
+        clipped[n] = text[start + n];
+        n++;
+    }
+    clipped[n] = '\0';
+    draw_text(x, y, clipped, fg, bg);
+}
+
+void draw_command_center_window(int32_t desktop_height) {
+    compositor_surface_entry *entry = find_surface_by_id(g_command_center_surface_id);
+    if (entry == 0 || entry->info.state == surface_state::collapsed || g_fb == 0) return;
+    const int32_t screen_width = static_cast<int32_t>(g_fb->width);
+    const int32_t x = entry->info.x < 8 ? 8 : entry->info.x;
+    const int32_t y = entry->info.y < 8 ? 8 : entry->info.y;
+    int32_t w = static_cast<int32_t>(entry->info.width);
+    int32_t h = static_cast<int32_t>(entry->info.height);
+    if (w > screen_width - x - 8) w = screen_width - x - 8;
+    if (h > desktop_height - y - 8) h = desktop_height - y - 8;
+    if (w < 120 || h < 90) return;
+
+    const uint64_t saved_scale = g_text_scale;
+    if (w < 600 || h < 240) g_text_scale = 1;
+    const int32_t line_height = static_cast<int32_t>(kGlyphH * g_text_scale) + 4;
+    if (h < 4 * line_height + 24) g_text_scale = 1;
+    const int32_t row_height = static_cast<int32_t>(kGlyphH * g_text_scale) + 4;
+    const int32_t title_height = row_height + 12;
+    const uint64_t columns = static_cast<uint64_t>(w - 24) / (kGlyphW * g_text_scale);
+    const uint32_t body = compose_rgb(12, 20, 32);
+    const uint32_t title = compose_rgb(24, 42, 64);
+    const uint32_t text = compose_rgb(220, 232, 244);
+    const uint32_t muted = compose_rgb(146, 172, 198);
+    const bool focused = g_focused_surface_id == g_input_surface_id ||
+                         g_focused_surface_id == g_command_center_surface_id;
+    fill_rect(x, y, w, h, body);
+    fill_rect(x, y, w, title_height, title);
+    draw_line(x, y, x + w - 1, y, focused ? compose_rgb(96, 182, 228) : muted);
+    draw_terminal_row(x + 12, y + 7, columns, "Terminal - Command Center", text, title);
+    const int32_t input_y = y + h - row_height - 8;
+    const int32_t status_y = input_y - row_height;
+    const int32_t history_y = y + title_height + 8;
+    const uint64_t rows = status_y > history_y ?
+        static_cast<uint64_t>((status_y - history_y) / row_height) : 0;
+    const bool partial = g_command_center_line_accum_len != 0;
+    const uint64_t total = g_command_center_history_count + (partial ? 1 : 0);
+    const uint64_t scroll = g_command_center_scroll_lines < total ? g_command_center_scroll_lines : total;
+    const uint64_t end = total - scroll;
+    const uint64_t begin = end > rows ? end - rows : 0;
+    const uint64_t oldest = (g_command_center_history_head + kCommandCenterHistoryMaxLines -
+                             g_command_center_history_count) % kCommandCenterHistoryMaxLines;
+    for (uint64_t i = begin; i < end; i++) {
+        const char *line = i < g_command_center_history_count ?
+            g_command_center_history[(oldest + i) % kCommandCenterHistoryMaxLines] :
+            g_command_center_line_accum;
+        draw_terminal_row(x + 12, history_y + static_cast<int32_t>(i - begin) * row_height,
+                          columns, line, text, body);
+    }
+    draw_terminal_row(x + 12, status_y, columns,
+                      scroll != 0 ? "History - scroll to follow output" : g_command_center_status, muted, body);
+    draw_terminal_row(x + 12, input_y, columns, ">", compose_rgb(96, 212, 176), body);
+    if (columns > 2 && !surface_title_equals(g_input_surface_draft, "ready")) {
+        draw_terminal_row(x + 12 + static_cast<int32_t>(2 * kGlyphW * g_text_scale),
+                          input_y, columns - 2, g_input_surface_draft, text, body, true);
+    }
+    g_text_scale = saved_scale;
 }
 
 void draw_compositor_surface_cards(void) {
@@ -656,8 +745,7 @@ void draw_compositor_surface_cards(void) {
 
     fill_rect(0, 0, width, desktop_h, compose_rgb(10, 22, 38));
     draw_line(0, desktop_h - 1, width - 1, desktop_h - 1, compose_rgb(58, 96, 152));
-    draw_text(20, 16, "FORTIFY CITADEL DESKTOP", compose_rgb(220, 236, 255), compose_rgb(10, 22, 38));
-    draw_text(20, 38, "Static layout active", compose_rgb(172, 202, 242), compose_rgb(10, 22, 38));
+    draw_command_center_window(desktop_h);
 
     fill_rect(0, desktop_h, width, height - desktop_h, compose_rgb(8, 16, 30));
     draw_line(0, desktop_h, width - 1, desktop_h, compose_rgb(92, 136, 208));
@@ -693,7 +781,7 @@ void draw_compositor_surface_cards(void) {
 
     draw_taskbar_slot(surface_shell_region::taskbar_terminal,
                       "Terminal",
-                      g_input_surface_draft,
+                      "Console",
                       focused_region == surface_shell_region::taskbar_terminal);
     draw_taskbar_slot(surface_shell_region::taskbar_explorer,
                       "Explorer",
@@ -704,7 +792,7 @@ void draw_compositor_surface_cards(void) {
                       g_command_center_status,
                       focused_region == surface_shell_region::taskbar_tasks);
     draw_taskbar_slot(surface_shell_region::taskbar_clock,
-                      "Clock",
+                      "Uptime",
                       clock_text,
                       focused_region == surface_shell_region::taskbar_clock);
     draw_taskbar_slot(surface_shell_region::taskbar_system,
@@ -762,6 +850,7 @@ void glyph_5x7(uint8_t c, uint8_t *rows) {
         case ')': set_rows(rows, 0x08, 0x04, 0x02, 0x02, 0x02, 0x04, 0x08); return;
         case '+': set_rows(rows, 0x00, 0x04, 0x04, 0x1f, 0x04, 0x04, 0x00); return;
         case '_': set_rows(rows, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1f); return;
+        case '>': set_rows(rows, 0x10, 0x08, 0x04, 0x02, 0x04, 0x08, 0x10); return;
         case ' ': return;
         default: set_rows(rows, 0x1f, 0x01, 0x02, 0x04, 0x08, 0x00, 0x08); return;
     }
@@ -825,7 +914,7 @@ void draw_line(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color) {
         if (x0 == x1 && y0 == y1) {
             break;
         }
-        const int32_t e2 = err << 1;
+        const int64_t e2 = static_cast<int64_t>(err) * 2;
         if (e2 >= dy) {
             err += dy;
             x0 += sx;
@@ -1353,6 +1442,20 @@ bool compositor_surface_create(surface_type type,
         return false;
     }
     assign_shell_surface_metadata(&info);
+    if (surface_title_equals(info.title, "Command Center")) {
+        const uint32_t width = g_fb != 0 ? static_cast<uint32_t>(g_fb->width) : 1280U;
+        const uint32_t height = g_fb != 0 ? static_cast<uint32_t>(g_fb->height) : 720U;
+        info.x = width < 600 ? 8 : 24;
+        info.y = height < 400 ? 8 : 48;
+        const uint32_t available_width = width > static_cast<uint32_t>(info.x) + 8 ?
+            width - static_cast<uint32_t>(info.x) - 8 : 0;
+        const uint32_t reserved = static_cast<uint32_t>(info.y) + kShellTaskbarHeight + 28;
+        const uint32_t available_height = height > reserved ? height - reserved : 0;
+        info.width = available_width < 1000 ? available_width : 1000;
+        info.height = available_height < 600 ? available_height : 600;
+        info.layer = kLayerApplications;
+        info.state = surface_state::floating;
+    }
     info.capabilities = capabilities;
     info.id = __atomic_add_fetch(&g_next_surface_id, 1, __ATOMIC_RELAXED);
     g_surfaces[free_index].used = true;
