@@ -186,6 +186,8 @@ QEMU_SHARE_ENABLE=1 SHARE_README_BRIDGE=1 QEMU_SHARE_PATH=/absolute/path/to/shar
 
 This injects a README bridge blob (up to 4096 bytes) into the synthetic FAT32 `README.TXT` entry used by `fs-root-head README.TXT`, and injects a command bridge blob (up to 256 bytes) into `FS-TEST.CMD` for `run-cmd-file FS-TEST.CMD`. Auto-detect checks `$(QEMU_SHARE_PATH)` first, then falls back to `$(CURDIR)` (`SHARE_README_FILE`/`SHARE_CMD_FILE` can override file selection).
 
+The repository includes [fs-test.cmd](/home/dmort/fortify/shared/fs-test.cmd) as a safe-mode 9P smoke script for `run-cmd-file FS-TEST.CMD`.
+
 And pass additional QEMU arguments through `QEMU_EXTRA_FLAGS`:
 
 ```bash
